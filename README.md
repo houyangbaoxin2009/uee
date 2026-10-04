@@ -87,11 +87,45 @@ serialization writers · triggers. Export runs as a two-phase pipeline: a read-o
 completed within a single frame on the main thread, then parallel encoding and per-mod sharded
 output on worker threads.
 
+## 用法 / Usage
+
+游戏内（需要权限等级 2）：
+
+```text
+/uee status        显示加载器、游戏版本与已加载模组数量
+/uee export        导出百科模式（NDJSON + 百科投影）
+/uee export-all    一次导出全部格式
+```
+
+产物写入 `<游戏目录>/exports/uee/`，按命名空间与类目分片。
+
+* 每个分片只承载一个元素类目，文件名形如 `<命名空间>-<类目>.<扩展名>`。
+* 百科投影写入 `<命名空间>/Json/<命名空间>/<命名空间>-<类目>.json`，即导入端期望的位置。
+* 单个元素采集失败**不会中断导出**，失败项单独列出。
+
+In game (permission level 2):
+
+```text
+/uee status        show loader, game version and loaded mod count
+/uee export        export wiki mode (NDJSON plus the wiki projection)
+/uee export-all    export every format in one pass
+```
+
+Artifacts go to `<game dir>/exports/uee/`, sharded by namespace and category.
+
+* Each shard carries exactly one element category, named `<namespace>-<category>.<ext>`.
+* The wiki projection is written to `<namespace>/Json/<namespace>/<namespace>-<category>.json`,
+  where an importer expects to find it.
+* One failing element **never aborts the export**; failures are reported separately.
+
 ## 开发状态 / Status
 
-**设计阶段**：架构与契约已定案，尚未进入实现。
+**实现中**：核心（模型、SPI、全部八种写端、两阶段分片流水线、崩溃隔离）已落地并通过验证；
+四个加载器的构建脚本与适配层已就位，尚未在联网环境编译过。
 
-**Design stage**: architecture and contracts are settled; implementation has not started.
+**In progress**: the core — model, SPI, all eight writers, the two-phase sharded pipeline and crash
+isolation — is implemented and verified; the four loaders' build scripts and adapters are in place
+and have not yet been compiled against the game.
 
 ## License
 
