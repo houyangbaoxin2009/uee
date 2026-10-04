@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "uee",
+  "version": "${version}",
+  "name": "Universal Element Exporter",
+  "description": "Multi-loader element exporter for Minecraft. Exports mod metadata, registries, datapack contents and game assets in one configurable pass, as machine-readable artifacts for automation such as wiki editing workflows.",
+  "authors": [
+    "houyangbaoxin2009"
+  ],
+  "contact": {
+    "homepage": "https://github.com/houyangbaoxin2009/uee",
+    "sources": "https://github.com/houyangbaoxin2009/uee"
+  },
+  "license": "TPL-2.3",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "org.uee.fabric.UeeFabric"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": ">=1.21"
+  }
+}

@@ -1,0 +1,60 @@
+plugins {
+    id 'base'
+}
+
+allprojects {
+    group = project.maven_group
+    version = project.mod_version
+
+    repositories {
+        mavenCentral()
+    }
+}
+
+subprojects {
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+        options.release = project.java_version as Integer
+    }
+}
+
+/**
+ * Compiles the Minecraft-independent core on its own.
+ *
+ * <p>common/src/main/java holds the model, SPI interfaces, writers, configuration and pipeline —
+ * none of which mentions a game type. Being able to build it with no loader toolchain and no game
+ * jar is the property that makes the output contract verifiable in isolation, so it gets its own
+ * task rather than riding along with a loader build.
+ */
+tasks.register('verifyCore', JavaCompile) {
+    description = 'Compiles the Minecraft-independent core (model, SPI, writers, pipeline).'
+    group = 'verification'
+    source = fileTree('common/src/main/java') { include '**/*.java' }
+    classpath = files()
+    destinationDirectory = layout.buildDirectory.dir('classes/verifyCore')
+    options.encoding = 'UTF-8'
+    options.release = project.java_version as Integer
+    options.compilerArgs << '-Xlint:all' << '-Werror'
+}
+
+/** Compiles the smoke and round-trip harnesses against verifyCore's output. */
+tasks.register('verifyHarness', JavaCompile) {
+    description = 'Compiles the smoke test and the zd round-trip check.'
+    group = 'verification'
+    dependsOn 'verifyCore'
+    source = fileTree('common/src/test/java') { include '**/*.java' }
+    classpath = files(layout.buildDirectory.dir('classes/verifyCore'))
+    destinationDirectory = layout.buildDirectory.dir('classes/verifyHarness')
+    options.encoding = 'UTF-8'
+    options.release = project.java_version as Integer
+}
+
+tasks.register('smokeTest', JavaExec) {
+    description = 'Runs the end-to-end pipeline over a synthetic adapter.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = files(layout.buildDirectory.dir('classes/verifyCore'),
+            layout.buildDirectory.dir('classes/verifyHarness'))
+    mainClass = 'org.uee.SmokeTest'
+    args = [layout.buildDirectory.dir('smoke').get().asFile.absolutePath]
+}

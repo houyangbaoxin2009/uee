@@ -1,0 +1,48 @@
+plugins {
+    id 'net.neoforged.moddev' version '2.0.28'
+}
+
+base {
+    archivesName = "${project.archives_base_name}-neoforge"
+}
+
+sourceSets {
+    main {
+        java.srcDirs = ['src/main/java', '../common/src/main/java', '../common/src/mc/java']
+        resources.srcDirs = ['src/main/resources']
+    }
+}
+
+neoForge {
+    version = project.neoforge_version
+    // ModDevGradle maps to Mojang's official names by default, matching the other three loaders so
+    // the shared code in common/src/mc/java compiles unchanged here too.
+
+    runs {
+        client {
+            client()
+        }
+        server {
+            server()
+        }
+    }
+
+    mods {
+        uee {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('META-INF/neoforge.mods.toml') {
+        expand version: project.version, minecraft_version: project.minecraft_version
+    }
+}
+
+jar {
+    from('../LICENSE') {
+        rename { "LICENSE-${project.archives_base_name}" }
+    }
+}

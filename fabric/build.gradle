@@ -1,0 +1,48 @@
+plugins {
+    id 'fabric-loom' version '1.7-SNAPSHOT'
+}
+
+base {
+    archivesName = "${project.archives_base_name}-fabric"
+}
+
+// The core is compiled into this build rather than consumed as a jar: it needs the game classes,
+// and only a loader toolchain supplies them. All four loaders map to Mojang's official names, which
+// is what lets the shared collection code in common/src/mc/java compile unchanged in each of them.
+sourceSets {
+    main {
+        java.srcDirs = ['src/main/java', '../common/src/main/java', '../common/src/mc/java']
+        resources.srcDirs = ['src/main/resources']
+    }
+}
+
+loom {
+    runs {
+        client {
+            client()
+        }
+        server {
+            server()
+        }
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:${project.fabric_loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') {
+        expand version: project.version, minecraft_version: project.minecraft_version
+    }
+}
+
+jar {
+    from('../LICENSE') {
+        rename { "LICENSE-${project.archives_base_name}" }
+    }
+}

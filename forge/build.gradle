@@ -1,0 +1,58 @@
+plugins {
+    id 'net.minecraftforge.gradle' version '[6.0.24,6.2)'
+}
+
+base {
+    archivesName = "${project.archives_base_name}-forge"
+}
+
+sourceSets {
+    main {
+        java.srcDirs = ['src/main/java', '../common/src/main/java', '../common/src/mc/java']
+        resources.srcDirs = ['src/main/resources']
+    }
+}
+
+minecraft {
+    // 'official' is the Mojang mapping channel — the same names the other three loaders use, so the
+    // shared collection code compiles here without a per-loader fork.
+    mappings channel: 'official', version: project.minecraft_version
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+            mods { uee { source sourceSets.main } }
+        }
+        server {
+            workingDirectory project.file('run')
+            mods { uee { source sourceSets.main } }
+        }
+    }
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${project.minecraft_version}-${project.forge_version}"
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('META-INF/mods.toml') {
+        expand version: project.version, minecraft_version: project.minecraft_version
+    }
+}
+
+jar {
+    manifest {
+        attributes([
+                'Specification-Title'     : 'uee',
+                'Specification-Vendor'    : 'houyangbaoxin2009',
+                'Specification-Version'   : '1',
+                'Implementation-Title'    : project.name,
+                'Implementation-Version'  : project.version,
+                'Implementation-Vendor'   : 'houyangbaoxin2009'
+        ])
+    }
+    from('../LICENSE') {
+        rename { "LICENSE-${project.archives_base_name}" }
+    }
+}

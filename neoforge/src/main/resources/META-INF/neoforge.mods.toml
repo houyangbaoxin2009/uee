@@ -1,0 +1,28 @@
+modLoader = "javafml"
+loaderVersion = "[1,)"
+license = "TPL-2.3"
+
+[[mods]]
+modId = "uee"
+version = "${version}"
+displayName = "Universal Element Exporter"
+authors = "houyangbaoxin2009"
+description = '''
+Multi-loader element exporter for Minecraft.
+Exports mod metadata, registries, datapack contents and game assets in one configurable pass,
+as machine-readable artifacts for automation such as wiki editing workflows.
+'''
+
+[[dependencies.uee]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.uee]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1,)"
+ordering = "NONE"
+side = "BOTH"

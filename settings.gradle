@@ -1,0 +1,22 @@
+pluginManagement {
+    repositories {
+        maven { name = 'Fabric'; url = 'https://maven.fabricmc.net/' }
+        maven { name = 'Quilt'; url = 'https://maven.quiltmc.org/repository/release' }
+        maven { name = 'NeoForged'; url = 'https://maven.neoforged.net/releases' }
+        maven { name = 'Forge'; url = 'https://maven.minecraftforge.net/' }
+        maven { name = 'Parchment'; url = 'https://maven.parchmentmc.org' }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+rootProject.name = 'uee'
+
+// The core lives in common/ but is NOT a Gradle subproject: it is a source directory compiled into
+// each loader build, because it needs the game classes that only a loader toolchain provides.
+// See docs/design.md (local) for why, and the verifyCore task in build.gradle for the
+// dependency-free subset that is compiled on its own.
+include 'fabric'
+include 'neoforge'
+include 'forge'
+include 'quilt'

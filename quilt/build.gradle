@@ -1,0 +1,47 @@
+plugins {
+    id 'org.quiltmc.loom' version '1.7-SNAPSHOT'
+}
+
+base {
+    archivesName = "${project.archives_base_name}-quilt"
+}
+
+sourceSets {
+    main {
+        java.srcDirs = ['src/main/java', '../common/src/main/java', '../common/src/mc/java']
+        resources.srcDirs = ['src/main/resources']
+    }
+}
+
+loom {
+    runs {
+        client {
+            client()
+        }
+        server {
+            server()
+        }
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings loom.officialMojangMappings()
+    modImplementation "org.quiltmc:quilt-loader:${project.quilt_loader_version}"
+    // Quilt runs Fabric mods through its compatibility layer; the Fabric API is what the shared
+    // adapter relies on for the mod list and resource access.
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('quilt.mod.json') {
+        expand version: project.version, minecraft_version: project.minecraft_version
+    }
+}
+
+jar {
+    from('../LICENSE') {
+        rename { "LICENSE-${project.archives_base_name}" }
+    }
+}
