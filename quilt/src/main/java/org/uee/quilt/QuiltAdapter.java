@@ -10,7 +10,9 @@ import org.quiltmc.loader.api.ModMetadata;
 import org.quiltmc.loader.api.QuiltLoader;
 import org.uee.mc.AbstractMinecraftAdapter;
 import org.uee.mc.ResourceManagerTranslator;
+import org.uee.debug.ModDescriptorReader;
 import org.uee.mc.Translator;
+import org.uee.model.Dependency;
 import org.uee.model.ModElement;
 
 /**
@@ -75,31 +77,43 @@ public final class QuiltAdapter extends AbstractMinecraftAdapter {
         return current;
     }
 
+    /** Builds the mod list, reading dependencies from {@code quilt.mod.json} rather than the API. */
     @Override
     protected List<ModElement> loadedMods() {
         Collection<ModContainer> containers = QuiltLoader.getAllMods();
         List<ModElement> out = new ArrayList<>(containers.size());
+        String mcVersion = minecraftVersion();
         for (ModContainer container : containers) {
             ModMetadata meta = container.metadata();
+            Path path = containerFile(container);
+            ModDescriptorReader.Descriptor descriptor = ModDescriptorReader.read(path);
             out.add(new ModElement(
                     meta.id(),
                     meta.name(),
                     meta.version().raw(),
                     meta.id(),
                     "quilt",
-                    minecraftVersion(),
+                    mcVersion,
                     meta.contributors().stream()
                             .map(c -> c.name() == null ? c.id() : c.name())
                             .toArray(String[]::new),
                     meta.license().isEmpty() ? null : String.join(",", meta.license()),
                     meta.description(),
-                    meta.depends().entrySet().stream()
-                            .map(e -> e.getKey() + "@" + e.getValue())
-                            .toArray(String[]::new),
-                    new String[0],
-                    null));
+                    descriptor != null ? descriptor.dependencies() : new Dependency[0],
+                    descriptor != null ? descriptor.providers() : new String[0],
+                    path == null ? null : path.getFileName().toString(),
+                    path == null ? null : path.toString()));
         }
         return out;
+    }
+
+    private Path containerFile(ModContainer container) {
+        try {
+            List<Path> paths = container.rootPaths();
+            return paths.isEmpty() ? null : paths.get(0);
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     @Override

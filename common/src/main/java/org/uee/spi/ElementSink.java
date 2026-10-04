@@ -36,17 +36,23 @@ public interface ElementSink {
     void recipe(RecipeElement e);
 
     /**
-     * Any other registry entry, for the categories that have no dedicated record type.
+     * Any other record, for the categories that have no dedicated record type.
+     *
+     * <p>The namespace is explicit rather than derived from {@code key}, because a finding can be
+     * cross-cutting: a conflict detected between two mods belongs to the collection, not to either
+     * mod's shard, and a mixin record belongs to the mod that declared it. Deriving it would force
+     * every caller to encode routing intent inside a display key.
      *
      * @param kind the category
-     * @param registryName the {@code namespace:path} registry name
+     * @param namespace the shard this record belongs to
+     * @param key the record's identity, unique within its namespace and kind
      * @param nameZh localized name, or {@code null}
      * @param nameEn English name, or {@code null}
-     * @param tags tag ids attached to the entry, never {@code null}
+     * @param listValues list-valued content, rendered as an array field
      * @param extra additional key/value pairs, flattened as k0,v0,k1,v1,...
      */
-    void generic(ElementKind kind, String registryName, String nameZh, String nameEn,
-            String[] tags, String[] extra);
+    void generic(ElementKind kind, String namespace, String key, String nameZh, String nameEn,
+            String[] listValues, String[] extra);
 
     /** A debug section (layer A). */
     void debug(DebugSection section);

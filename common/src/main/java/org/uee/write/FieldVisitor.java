@@ -29,6 +29,20 @@ public interface FieldVisitor {
     /** A list-of-strings field. An empty array is still emitted, so consumers see the key. */
     void array(String key, String[] values);
 
+    /**
+     * A list of records that all share the same columns.
+     *
+     * <p>Needed because some content is genuinely tabular and flattening it to text would put the
+     * burden of parsing back onto every consumer. Dependencies are the motivating case: the
+     * difference between a required, optional and explicitly incompatible entry is the whole point
+     * of the analysis, and a {@code "id@range"} string cannot carry it.
+     *
+     * @param key the field name
+     * @param columns column names, in order
+     * @param rows one array per record, each the same length as {@code columns}
+     */
+    void records(String key, String[] columns, java.util.List<String[]> rows);
+
     /** Closes the element opened by {@link #element}. */
     void end();
 }

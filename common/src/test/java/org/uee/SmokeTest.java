@@ -9,6 +9,7 @@ import org.uee.config.ExportConfig;
 import org.uee.config.WikiOptions;
 import org.uee.model.BlockElement;
 import org.uee.model.DebugSection;
+import org.uee.model.Dependency;
 import org.uee.model.ElementKind;
 import org.uee.model.EntityElement;
 import org.uee.model.Ingredient;
@@ -40,11 +41,15 @@ public final class SmokeTest {
                 .formats(ExportConfig.NDJSON, ExportConfig.JSON, ExportConfig.TD,
                         ExportConfig.YAML, ExportConfig.TOML, ExportConfig.XML, ExportConfig.ZD,
                         org.uee.write.WriterFactory.WIKI)
+                .kinds(org.uee.model.ElementKind.values())
+                .kinds(org.uee.model.ElementKind.values())
+                .kinds(org.uee.model.ElementKind.values())
                 .icons(true)
                 .wiki(WikiOptions.builder().enabled(true).icons(true).build())
                 .build();
 
         ExportReport report = new Exporter(new FakeAdapter(), config, root).run();
+        int problems = validate(report, root);
         System.out.println("== report ==");
         System.out.println(report.summary());
         for (ExportReport.Artifact a : report.artifacts()) {
@@ -58,9 +63,226 @@ public final class SmokeTest {
         }
         for (ExportReport.Artifact a : report.artifacts()) {
             System.out.println("\n---- " + root.relativize(a.path()) + " ----");
+            if (ExportConfig.ZD.equals(a.format())) {
+                // Binary; dumping it as text would only be noise. The round-trip check decodes it.
+                System.out.println("(binary, " + a.bytes() + " bytes; see the round-trip check)");
+                continue;
+            }
             String text = Files.readString(a.path());
             System.out.println(text.length() > 900 ? text.substring(0, 900) + "\n...[truncated]" : text);
         }
+
+        System.out.println();
+        System.out.println(problems == 0 ? "STRUCTURE: OK" : "STRUCTURE: " + problems + " PROBLEM(S)");
+        if (problems != 0) {
+            System.exit(1);
+        }
+    }
+
+    // ---------------------------------------------------------------- structural validation
+
+    /**
+     * Checks that every artifact is structurally sound and that all encodings of the same shard carry
+     * the same number of records.
+     *
+     * <p>This exists because a writer can be wrong in a way that only a structural check catches. A
+     * missing closing brace produces a file of plausible size whose every line fails to parse, and a
+     * size-based assertion passes it happily. The cross-format count check is the general form of the
+     * same idea: the same records are encoded several ways, so the counts must agree, and any writer
+     * that drops or truncates a record breaks the agreement.
+     *
+     * @return the number of problems found
+     */
+    private static int validate(ExportReport report, Path root) throws IOException {
+        int problems = 0;
+        java.util.Map<String, java.util.Map<String, Integer>> counts = new java.util.TreeMap<>();
+
+        for (ExportReport.Artifact a : report.artifacts()) {
+            if (ExportConfig.ZD.equals(a.format())) {
+                // Binary: validated by decoding it back through the codec, not by reading text.
+                continue;
+            }
+            String text = Files.readString(a.path());
+            String shard = a.namespace() + "|" + a.kind();
+            int records = -1;
+
+            switch (a.format()) {
+                case ExportConfig.NDJSON -> {
+                    records = 0;
+                    for (String line : text.split("\n")) {
+                        if (line.isBlank()) {
+                            continue;
+                        }
+                        try {
+                            Object parsed = org.uee.util.JsonReader.parse(line);
+                            if (!(parsed instanceof java.util.Map)) {
+                                System.out.println("  PROBLEM not an object: " + a.path());
+                                problems++;
+                            }
+                            records++;
+                        } catch (RuntimeException e) {
+                            System.out.println("  PROBLEM unparseable NDJSON line in "
+                                    + root.relativize(a.path()) + ": " + e.getMessage());
+                            problems++;
+                            records++;
+                        }
+                    }
+                }
+                case ExportConfig.JSON -> {
+                    try {
+                        Object parsed = org.uee.util.JsonReader.parse(text);
+                        if (parsed instanceof java.util.Map<?, ?> map) {
+                            records = 0;
+                            for (Object v : map.values()) {
+                                if (v instanceof java.util.List<?> list) {
+                                    records += list.size();
+                                }
+                            }
+                        }
+                    } catch (RuntimeException e) {
+                        System.out.println("  PROBLEM unparseable JSON in "
+                                + root.relativize(a.path()) + ": " + e.getMessage());
+                        problems++;
+                    }
+                }
+                case ExportConfig.TD -> {
+                    records = countOccurrences(text, "\n  [");
+                    problems += balance(text, '[', ']', "td", a.path());
+                    problems += evenQuotes(text, "td", a.path());
+                }
+                case ExportConfig.TOML -> {
+                    records = countOccurrences(text, "[[");
+                    problems += balance(text, '[', ']', "toml", a.path());
+                }
+                case ExportConfig.YAML -> {
+                    records = countOccurrences(text, "\n  - ");
+                }
+                case ExportConfig.XML -> {
+                    // Count element openers only: "\n  </item>" also contains the needle, so a plain
+                    // occurrence count would double every record.
+                    records = 0;
+                    for (int i = text.indexOf("\n  <"); i >= 0; i = text.indexOf("\n  <", i + 1)) {
+                        if (i + 4 < text.length() && text.charAt(i + 4) != '/') {
+                            records++;
+                        }
+                    }
+                    problems += xmlBalance(text, a.path());
+                }
+                default -> {
+                    // zd is binary and is verified by decoding it, not by counting text.
+                }
+            }
+
+            if (records > 0) {
+                counts.computeIfAbsent(shard, k -> new java.util.TreeMap<>())
+                        .put(a.format(), records);
+            }
+        }
+
+        for (java.util.Map.Entry<String, java.util.Map<String, Integer>> e : counts.entrySet()) {
+            if (e.getValue().size() < 2) {
+                continue;
+            }
+            java.util.Set<Integer> distinct = new java.util.TreeSet<>(e.getValue().values());
+            if (distinct.size() > 1) {
+                System.out.println("  PROBLEM record count disagrees for shard " + e.getKey()
+                        + ": " + e.getValue());
+                problems++;
+            }
+        }
+        return problems;
+    }
+
+    private static int countOccurrences(String text, String needle) {
+        int n = 0;
+        int i = text.indexOf(needle);
+        while (i >= 0) {
+            n++;
+            i = text.indexOf(needle, i + needle.length());
+        }
+        return n;
+    }
+
+    private static int balance(String text, char open, char close, String format, Path file) {
+        int depth = 0;
+        boolean inString = false;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '"' && (i == 0 || text.charAt(i - 1) != '\\')) {
+                inString = !inString;
+                continue;
+            }
+            if (inString) {
+                continue;
+            }
+            if (c == open) {
+                depth++;
+            } else if (c == close) {
+                depth--;
+                if (depth < 0) {
+                    System.out.println("  PROBLEM unbalanced " + format + " in " + file);
+                    return 1;
+                }
+            }
+        }
+        if (depth != 0) {
+            System.out.println("  PROBLEM unbalanced " + format + " (" + depth + " unclosed) in " + file);
+            return 1;
+        }
+        return 0;
+    }
+
+    private static int evenQuotes(String text, String format, Path file) {
+        int quotes = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '"' && (i == 0 || text.charAt(i - 1) != '\\')) {
+                quotes++;
+            }
+        }
+        if ((quotes & 1) != 0) {
+            System.out.println("  PROBLEM odd number of quotes in " + format + " " + file);
+            return 1;
+        }
+        return 0;
+    }
+
+    /** Checks that every opened element is closed, ignoring self-closing tags and the XML prolog. */
+    private static int xmlBalance(String text, Path file) {
+        int depth = 0;
+        int i = 0;
+        while (true) {
+            int open = text.indexOf('<', i);
+            if (open < 0) {
+                break;
+            }
+            int close = text.indexOf('>', open);
+            if (close < 0) {
+                System.out.println("  PROBLEM unterminated tag in " + file);
+                return 1;
+            }
+            String tag = text.substring(open + 1, close);
+            i = close + 1;
+            if (tag.startsWith("?") || tag.startsWith("!")) {
+                continue;
+            }
+            if (tag.endsWith("/")) {
+                continue;
+            }
+            if (tag.startsWith("/")) {
+                depth--;
+                if (depth < 0) {
+                    System.out.println("  PROBLEM unbalanced XML in " + file);
+                    return 1;
+                }
+            } else {
+                depth++;
+            }
+        }
+        if (depth != 0) {
+            System.out.println("  PROBLEM unbalanced XML (" + depth + " unclosed) in " + file);
+            return 1;
+        }
+        return 0;
     }
 
     private static void deleteRecursively(Path p) throws IOException {
@@ -90,10 +312,14 @@ public final class SmokeTest {
             return List.of(
                     new ModElement("example", "Example Mod", "1.0.0", "example", "fabric", "1.21.1",
                             new String[] {"Someone"}, "TPL-2.3", "A demo mod for the smoke test.",
-                            new String[] {"fabricloader>=0.15.0"}, new String[] {"example_api"},
-                            "example-1.0.0.jar"),
+                            new Dependency[] {
+                                new Dependency("fabricloader", ">=0.15.0", Dependency.Kind.REQUIRED),
+                                new Dependency("absentlib", null, Dependency.Kind.REQUIRED),
+                                new Dependency("jei", null, Dependency.Kind.OPTIONAL),
+                                new Dependency("brokenmod", null, Dependency.Kind.INCOMPATIBLE)},
+                            new String[] {"example_api"}, "example-1.0.0.jar"),
                     new ModElement("minecraft", "Minecraft", "1.21.1", "minecraft", "vanilla", "1.21.1",
-                            new String[0], null, null, new String[0], new String[0], null));
+                            new String[0], null, null, new Dependency[0], new String[0], null));
         }
 
         @Override
@@ -128,7 +354,7 @@ public final class SmokeTest {
                         5.0f, 6.0f, 0, true, "metal", new String[] {"c:storage_blocks"}));
             }
             if (wanted.contains(ElementKind.EFFECT)) {
-                sink.generic(ElementKind.EFFECT, "example:shiny", "闪光", "Shiny",
+                sink.generic(ElementKind.EFFECT, "example", "example:shiny", "闪光", "Shiny",
                         new String[0], new String[] {"amplifierMax", "3"});
             }
         }
@@ -163,6 +389,22 @@ public final class SmokeTest {
                             "minecraftVersion", "1.21.1",
                             "javaVersion", System.getProperty("java.version")),
                     DebugSection.of("counts", "mods", "2", "registries", "4"));
+        }
+
+        /**
+         * Runs the diagnostic analysis, so the smoke test exercises the analysis records through
+         * every writer rather than only checking them against an in-memory sink.
+         */
+        @Override
+        public void collectDebugRecords(ExportConfig config, org.uee.spi.ElementSink sink) {
+            org.uee.debug.ModAnalyzer.analyze(new org.uee.debug.ModAnalyzer.Context(
+                    mods(), java.util.Map.of(),
+                    java.util.List.of(org.uee.debug.MixinConfig.parse(
+                            "example.mixins.json", "example",
+                            "{\"package\":\"org.example.mixin\",\"mixins\":[\"FooMixin\"],"
+                                    + "\"server\":[{\"target\":\"net.minecraft.world.level.Level\","
+                                    + "\"mixins\":[\"LevelMixin\"]}]}")),
+                    java.util.Set.of("example", "minecraft", "orphanpack")), sink);
         }
 
         @Override

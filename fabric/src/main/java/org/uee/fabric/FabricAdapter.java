@@ -12,7 +12,10 @@ import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import org.uee.mc.AbstractMinecraftAdapter;
 import org.uee.mc.ResourceManagerTranslator;
+import org.uee.debug.ModContainerScanner;
+import org.uee.debug.ModDescriptorReader;
 import org.uee.mc.Translator;
+import org.uee.model.Dependency;
 import org.uee.model.ModElement;
 
 /**
@@ -80,35 +83,81 @@ public final class FabricAdapter extends AbstractMinecraftAdapter {
         return current;
     }
 
+    /**
+     * Builds the mod list.
+     *
+     * <p>Identity and container path come from Fabric Loader, which is stable. Dependencies come from
+     * the mod's own {@code fabric.mod.json} rather than from {@code ModMetadata#getDepends}: the
+     * descriptor is a documented format that does not change shape between loader versions, and it is
+     * the only source that distinguishes {@code recommends} and {@code breaks} from {@code depends}.
+     * Reading the file also makes that logic testable without a game.
+     */
     @Override
     protected List<ModElement> loadedMods() {
         List<ModElement> out = new ArrayList<>(loader.getAllMods().size());
+        String mcVersion = minecraftVersion();
         for (ModContainer container : loader.getAllMods()) {
             ModMetadata meta = container.getMetadata();
+            Path path = containerFile(container);
+            ModDescriptorReader.Descriptor descriptor = ModDescriptorReader.read(path);
+
+            String[] authors = descriptor != null && descriptor.authors().length > 0
+                    ? descriptor.authors()
+                    : meta.getAuthors().stream().map(Person::getName).toArray(String[]::new);
+            Dependency[] dependencies = descriptor != null
+                    ? descriptor.dependencies() : new Dependency[0];
+            String[] providers = descriptor != null ? descriptor.providers() : new String[0];
+            String license = descriptor != null && descriptor.license() != null
+                    ? descriptor.license()
+                    : (meta.getLicense().isEmpty() ? null : String.join(",", meta.getLicense()));
+
             out.add(new ModElement(
                     meta.getId(),
                     meta.getName(),
                     meta.getVersion().getFriendlyString(),
                     meta.getId(),
                     "fabric",
-                    minecraftVersion(),
-                    meta.getAuthors().stream().map(Person::getName).toArray(String[]::new),
-                    meta.getLicense().isEmpty() ? null : String.join(",", meta.getLicense()),
+                    mcVersion,
+                    authors,
+                    license,
                     meta.getDescription(),
-                    meta.getDepends().entrySet().stream()
-                            .map(e -> e.getKey() + "@" + e.getValue().getVersion().getFriendlyString())
-                            .toArray(String[]::new),
-                    new String[0],
-                    sourceFile(container)));
+                    dependencies,
+                    providers,
+                    path == null ? null : path.getFileName().toString(),
+                    path == null ? null : path.toString()));
         }
         return out;
     }
 
-    private String sourceFile(ModContainer container) {
+    /** Declared mixin configs for every loaded mod, read from the descriptors. */
+    public List<org.uee.debug.MixinConfig> declaredMixinConfigs() {
+        List<org.uee.debug.MixinConfig> out = new ArrayList<>();
+        for (ModContainer container : loader.getAllMods()) {
+            Path path = containerFile(container);
+            ModDescriptorReader.Descriptor descriptor = ModDescriptorReader.read(path);
+            if (descriptor == null) {
+                continue;
+            }
+            for (String resource : descriptor.mixinConfigs()) {
+                String text = ModContainerScanner.readText(path, resource);
+                if (text == null) {
+                    continue;
+                }
+                try {
+                    out.add(org.uee.debug.MixinConfig.parse(resource, descriptor.id(), text));
+                } catch (RuntimeException e) {
+                    // A config that will not parse is skipped rather than failing the whole scan.
+                    continue;
+                }
+            }
+        }
+        return out;
+    }
+
+    private Path containerFile(ModContainer container) {
         try {
-            return container.getOrigin().getPaths().isEmpty()
-                    ? null
-                    : container.getOrigin().getPaths().get(0).getFileName().toString();
+            List<Path> paths = container.getOrigin().getPaths();
+            return paths.isEmpty() ? null : paths.get(0);
         } catch (Throwable t) {
             return null;
         }

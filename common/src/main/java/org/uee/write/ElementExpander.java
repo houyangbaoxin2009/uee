@@ -3,6 +3,7 @@ package org.uee.write;
 import org.uee.model.BlockElement;
 import org.uee.model.DebugSection;
 import org.uee.model.ElementKind;
+import org.uee.model.Dependency;
 import org.uee.model.EntityElement;
 import org.uee.model.ItemElement;
 import org.uee.model.ModElement;
@@ -21,7 +22,22 @@ import org.uee.model.RecipeElement;
  */
 public final class ElementExpander {
 
+    /** Columns of the dependency record list, in emission order. */
+    public static final String[] DEPENDENCY_COLUMNS = {"id", "range", "kind"};
+
     private ElementExpander() {
+    }
+
+    /** Flattens a mod's dependencies into rows matching {@link #DEPENDENCY_COLUMNS}. */
+    public static java.util.List<String[]> dependencyRows(org.uee.model.ModElement e) {
+        java.util.List<String[]> rows = new java.util.ArrayList<>(e.dependencies().length);
+        for (org.uee.model.Dependency d : e.dependencies()) {
+            rows.add(new String[] {
+                    d.id(),
+                    d.hasVersionRange() ? d.versionRange() : "",
+                    d.kind().name().toLowerCase(java.util.Locale.ROOT)});
+        }
+        return rows;
     }
 
     public static void item(ItemElement e, FieldVisitor v) {
@@ -88,21 +104,29 @@ public final class ElementExpander {
         v.array("authors", e.authors());
         v.string("license", e.license());
         v.string("description", e.description());
-        v.array("dependencies", e.dependencies());
+        if (e.dependencies().length > 0) {
+            v.records("dependencies", DEPENDENCY_COLUMNS, dependencyRows(e));
+        }
         v.array("providers", e.providers());
         v.string("sourceFile", e.sourceFile());
         v.end();
     }
 
-    public static void generic(ElementKind kind, String registryName, String nameZh, String nameEn,
-            String[] tags, FieldVisitor v) {
-        v.element(kind, registryName);
-        if (registryName != null) {
-            v.string("namespace", ItemElement.namespaceOf(registryName));
-        }
+    public static void generic(ElementKind kind, String namespace, String key, String nameZh,
+            String nameEn, String[] listValues, String[] extra, FieldVisitor v) {
+        // No identity value here: these records are not registry-backed, so labelling their identity
+        // "registryName" would be wrong. Their identity goes in an explicit "key" field below.
+        v.element(kind, null);
+        v.string("key", key);
+        v.string("namespace", namespace);
         v.string("name", nameZh);
         v.string("englishName", nameEn);
-        v.array("tags", tags);
+        v.array("values", listValues);
+        if (extra != null) {
+            for (int i = 0; i + 1 < extra.length; i += 2) {
+                v.string(extra[i], extra[i + 1]);
+            }
+        }
         v.end();
     }
 

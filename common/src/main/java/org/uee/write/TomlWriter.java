@@ -63,9 +63,9 @@ public final class TomlWriter extends Writer implements FieldVisitor {
     }
 
     @Override
-    public void generic(ElementKind kind, String registryName, String nameZh, String nameEn,
-            String[] tags, String[] extra) {
-        ElementExpander.generic(kind, registryName, nameZh, nameEn, tags, this);
+    public void generic(ElementKind kind, String namespace, String key, String nameZh,
+            String nameEn, String[] listValues, String[] extra) {
+        ElementExpander.generic(kind, namespace, key, nameZh, nameEn, listValues, extra, this);
     }
 
     @Override
@@ -130,6 +130,27 @@ public final class TomlWriter extends Writer implements FieldVisitor {
     }
 
     private final StringBuilder run = new StringBuilder(96);
+
+    @Override
+    public void records(String key, String[] columns, java.util.List<String[]> rows) {
+        out.ascii(key).ascii(" = [");
+        for (int r = 0; r < rows.size(); r++) {
+            if (r > 0) {
+                out.ascii(", ");
+            }
+            String[] row = rows.get(r);
+            out.ascii("{ ");
+            for (int c = 0; c < columns.length; c++) {
+                if (c > 0) {
+                    out.ascii(", ");
+                }
+                out.ascii(columns[c]).ascii(" = ");
+                tomlString(c < row.length ? row[c] : "");
+            }
+            out.ascii(" }");
+        }
+        out.ascii("]").nl();
+    }
 
     /** Emits a TOML basic (double-quoted) string. */
     private void tomlString(String s) {

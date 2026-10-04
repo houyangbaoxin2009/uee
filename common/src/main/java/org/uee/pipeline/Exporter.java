@@ -43,6 +43,20 @@ public final class Exporter implements ElementSink {
     /** Namespace used for collection-wide sections (mod list, environment debug) that shard by themselves. */
     public static final String GLOBAL_NAMESPACE = "_global";
 
+    /** Categories produced by the diagnostic analysis rather than by a registry walk. */
+    private static final Set<ElementKind> ANALYSIS_KINDS =
+            Set.of(ElementKind.NAMESPACE, ElementKind.DEPENDENCY, ElementKind.CONFLICT,
+                    ElementKind.MIXIN);
+
+    private static boolean wantsAnalysis(Set<ElementKind> kinds) {
+        for (ElementKind k : ANALYSIS_KINDS) {
+            if (kinds.contains(k)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private final LoaderAdapter adapter;
     private final ExportConfig config;
     private final Path root;
@@ -72,9 +86,15 @@ public final class Exporter implements ElementSink {
             Set<ElementKind> registryKinds = EnumSet.copyOf(kinds);
             registryKinds.remove(ElementKind.MOD);
             registryKinds.remove(ElementKind.DEBUG);
+            registryKinds.removeAll(ANALYSIS_KINDS);
             if (!registryKinds.isEmpty()) {
                 safe(() -> adapter.collectRegistries(config, registryKinds, this));
                 safe(() -> adapter.collectDatapacks(config, registryKinds, this));
+            }
+            if (wantsAnalysis(kinds)) {
+                // Runs last: the analysis is derived from the mod list and the container files, and
+                // benefits from the observed-namespace set that registry collection just filled in.
+                safe(() -> adapter.collectDebugRecords(config, this));
             }
         } finally {
             close();
@@ -159,13 +179,12 @@ public final class Exporter implements ElementSink {
     }
 
     @Override
-    public void generic(ElementKind kind, String registryName, String nameZh, String nameEn,
-            String[] tags, String[] extra) {
-        String ns = ItemElement.namespaceOf(registryName);
-        if (!config.acceptsNamespace(ns)) {
+    public void generic(ElementKind kind, String namespace, String key, String nameZh,
+            String nameEn, String[] listValues, String[] extra) {
+        if (!config.acceptsNamespace(namespace) && !GLOBAL_NAMESPACE.equals(namespace)) {
             return;
         }
-        offer(ns, kind, w -> w.generic(kind, registryName, nameZh, nameEn, tags, extra));
+        offer(namespace, kind, w -> w.generic(kind, namespace, key, nameZh, nameEn, listValues, extra));
     }
 
     @Override

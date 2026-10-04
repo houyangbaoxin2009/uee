@@ -80,8 +80,8 @@ public abstract class Writer {
     public void recipe(RecipeElement e) {
     }
 
-    public void generic(ElementKind kind, String registryName, String nameZh, String nameEn,
-            String[] tags, String[] extra) {
+    public void generic(ElementKind kind, String namespace, String key, String nameZh, String nameEn,
+            String[] listValues, String[] extra) {
     }
 
     public void debug(DebugSection s) {

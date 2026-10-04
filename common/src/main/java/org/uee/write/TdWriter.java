@@ -122,19 +122,24 @@ public final class TdWriter extends Writer {
         kvOpt("minecraftVersion", e.minecraftVersion());
         kvArr("authors", e.authors(), false);
         kvOpt("license", e.license());
-        kvArr("dependencies", e.dependencies(), false);
+        records("dependencies", ElementExpander.DEPENDENCY_COLUMNS, ElementExpander.dependencyRows(e));
         kvArr("providers", e.providers(), false);
         closeRow();
     }
 
     @Override
-    public void generic(ElementKind kind, String registryName, String nameZh, String nameEn,
-            String[] tags, String[] extra) {
+    public void generic(ElementKind kind, String namespace, String key, String nameZh,
+            String nameEn, String[] listValues, String[] extra) {
         openRow(kind);
-        kv("registryName", registryName, true);
+        kv("key", key, true);
         kvOpt("name", nameZh);
         kvOpt("englishName", nameEn);
-        kvArr("tags", tags, false);
+        kvArr("values", listValues, false);
+        if (extra != null) {
+            for (int i = 0; i + 1 < extra.length; i += 2) {
+                kvOpt(extra[i], extra[i + 1]);
+            }
+        }
         closeRow();
     }
 
@@ -203,6 +208,24 @@ public final class TdWriter extends Writer {
             tdString(values[i]);
         }
         out.u8(']');
+    }
+
+    /** Appends a record list: an array of nested tables, one per row. */
+    public void records(String key, String[] columns, java.util.List<String[]> rows) {
+        sep(false);
+        out.ascii("    ").ascii(key).ascii(" = [").nl();
+        for (String[] row : rows) {
+            out.ascii("      [");
+            for (int c = 0; c < columns.length; c++) {
+                if (c > 0) {
+                    out.ascii(", ");
+                }
+                out.ascii(columns[c]).ascii(" = ");
+                tdString(c < row.length ? row[c] : "");
+            }
+            out.ascii("],").nl();
+        }
+        out.ascii("    ]");
     }
 
     /** Appends a td string literal with td's escape set. */

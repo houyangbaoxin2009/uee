@@ -10,9 +10,15 @@ import net.minecraftforge.forgespi.language.IModInfo;
 import org.uee.mc.AbstractMinecraftAdapter;
 import org.uee.mc.ResourceManagerTranslator;
 import org.uee.mc.Translator;
+import org.uee.model.Dependency;
 import org.uee.model.ModElement;
 
-/** Forge adapter. Shared logic lives in {@link AbstractMinecraftAdapter}. */
+/**
+ * Forge adapter. Shared logic lives in {@link AbstractMinecraftAdapter}.
+ *
+ * <p><b>Compile-unverified.</b> Written against the stable parts of {@code forgespi}; the mod list and
+ * container paths are the only Forge-specific surface, and it has not been through a compiler.
+ */
 public final class ForgeAdapter extends AbstractMinecraftAdapter {
 
     private volatile ResourceManager resources;
@@ -72,24 +78,50 @@ public final class ForgeAdapter extends AbstractMinecraftAdapter {
     protected List<ModElement> loadedMods() {
         List<IModInfo> infos = ModList.get().getMods();
         List<ModElement> out = new ArrayList<>(infos.size());
+        String mcVersion = minecraftVersion();
         for (IModInfo info : infos) {
+            Path container = containerOf(info.getModId());
             out.add(new ModElement(
                     info.getModId(),
                     info.getDisplayName(),
                     info.getVersion().toString(),
                     info.getModId(),
                     "forge",
-                    minecraftVersion(),
+                    mcVersion,
                     info.getAuthors().map(a -> a.split(",")).orElse(new String[0]),
                     info.getLicense().orElse(null),
                     info.getDescription(),
-                    info.getDependencies().stream()
-                            .map(d -> d.getModId() + "@" + d.getVersionRange())
-                            .toArray(String[]::new),
+                    dependenciesOf(info),
                     new String[0],
-                    null));
+                    container == null ? null : container.getFileName().toString(),
+                    container == null ? null : container.toString()));
         }
         return out;
+    }
+
+    /** Maps declared dependencies, distinguishing only required from optional. */
+    private static Dependency[] dependenciesOf(IModInfo info) {
+        List<IModInfo.ModVersion> versions = info.getDependencies();
+        if (versions == null || versions.isEmpty()) {
+            return new Dependency[0];
+        }
+        Dependency[] out = new Dependency[versions.size()];
+        int n = 0;
+        for (IModInfo.ModVersion dep : versions) {
+            out[n++] = new Dependency(dep.getModId(),
+                    dep.getVersionRange() == null ? null : dep.getVersionRange().toString(),
+                    dep.isMandatory() ? Dependency.Kind.REQUIRED : Dependency.Kind.OPTIONAL);
+        }
+        return out;
+    }
+
+    /** Resolves a mod's container file, or {@code null} when it cannot be located. */
+    private static Path containerOf(String modId) {
+        var fileInfo = ModList.get().getModFileById(modId);
+        if (fileInfo == null || fileInfo.getFile() == null) {
+            return null;
+        }
+        return fileInfo.getFile().getFilePath();
     }
 
     @Override

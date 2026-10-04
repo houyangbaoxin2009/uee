@@ -46,6 +46,7 @@ public final class ExportConfig {
     private final int shardSize;
     private final long memoryLimitBytes;
     private final int threads;
+    private final boolean includePaths;
     private final WikiOptions wiki;
 
     private ExportConfig(Builder b) {
@@ -62,6 +63,7 @@ public final class ExportConfig {
         this.shardSize = b.shardSize;
         this.memoryLimitBytes = b.memoryLimitBytes;
         this.threads = b.threads;
+        this.includePaths = b.includePaths;
         this.wiki = b.wiki;
     }
 
@@ -118,6 +120,17 @@ public final class ExportConfig {
         return threads;
     }
 
+    /**
+     * Whether full container paths are written to diagnostic output.
+     *
+     * <p>Off by default. The diagnostic artifacts are meant to be published or attached to a bug
+     * report, and an absolute path discloses the account name and directory layout; the file name
+     * identifies the mod just as well.
+     */
+    public boolean includePaths() {
+        return includePaths;
+    }
+
     public WikiOptions wiki() {
         return wiki;
     }
@@ -169,6 +182,7 @@ public final class ExportConfig {
         private int shardSize = 20_000;
         private long memoryLimitBytes = 256L * 1024 * 1024;
         private int threads = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+        private boolean includePaths = false;
         private WikiOptions wiki = WikiOptions.defaults();
 
         public Builder outputDir(Path dir) {
@@ -238,6 +252,11 @@ public final class ExportConfig {
 
         public Builder threads(int n) {
             this.threads = Math.max(1, n);
+            return this;
+        }
+
+        public Builder includePaths(boolean on) {
+            this.includePaths = on;
             return this;
         }
 

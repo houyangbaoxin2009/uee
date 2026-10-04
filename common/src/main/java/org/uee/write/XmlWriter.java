@@ -75,9 +75,9 @@ public final class XmlWriter extends Writer implements FieldVisitor {
     }
 
     @Override
-    public void generic(ElementKind kind, String registryName, String nameZh, String nameEn,
-            String[] tags, String[] extra) {
-        ElementExpander.generic(kind, registryName, nameZh, nameEn, tags, this);
+    public void generic(ElementKind kind, String namespace, String key, String nameZh,
+            String nameEn, String[] listValues, String[] extra) {
+        ElementExpander.generic(kind, namespace, key, nameZh, nameEn, listValues, extra, this);
     }
 
     @Override
@@ -100,28 +100,28 @@ public final class XmlWriter extends Writer implements FieldVisitor {
         if (value == null) {
             return;
         }
-        open(key);
+        openField("    " + key);
         xmlText(value);
         close(key);
     }
 
     @Override
     public void number(String key, long value) {
-        open(key);
+        openField("    " + key);
         out.dec(value);
         close(key);
     }
 
     @Override
     public void decimal(String key, double value) {
-        open(key);
+        openField("    " + key);
         out.jsonNum(value);
         close(key);
     }
 
     @Override
     public void bool(String key, boolean value) {
-        open(key);
+        openField("    " + key);
         out.ascii(value ? "true" : "false");
         close(key);
     }
@@ -133,7 +133,7 @@ public final class XmlWriter extends Writer implements FieldVisitor {
             return;
         }
         for (String v : values) {
-            open(key);
+            openField("    " + key);
             xmlText(v);
             close(key);
         }
@@ -144,20 +144,45 @@ public final class XmlWriter extends Writer implements FieldVisitor {
         out.ascii("  </").ascii(shardKind.singular()).ascii(">").nl();
     }
 
+    @Override
+    public void records(String key, String[] columns, java.util.List<String[]> rows) {
+        if (rows.isEmpty()) {
+            out.ascii("    <").ascii(key).ascii("/>").nl();
+            return;
+        }
+        out.ascii("    <").ascii(key).ascii(">").nl();
+        for (String[] row : rows) {
+            out.ascii("      <record>").nl();
+            for (int c = 0; c < columns.length; c++) {
+                openField("      " + columns[c]);
+                xmlText(c < row.length ? row[c] : "");
+                close(columns[c]);
+            }
+            out.ascii("      </record>").nl();
+        }
+        out.ascii("    </").ascii(key).ascii(">").nl();
+    }
+
     // ---------------------------------------------------------------- emission
 
     private void field(String value) {
-        open("registryName");
+        openField("    registryName");
         xmlText(value);
         close("registryName");
     }
 
-    private void open(String key) {
-        out.ascii("    <").ascii(key).ascii(">");
+    /** Opens a field element, preserving the indentation embedded in {@code key}. */
+    private void openField(String key) {
+        int indent = 0;
+        while (indent < key.length() && key.charAt(indent) == ' ') {
+            indent++;
+        }
+        out.ascii(key.substring(0, indent)).u8('<')
+                .ascii(key.substring(indent)).u8('>');
     }
 
     private void close(String key) {
-        out.ascii("</").ascii(key).ascii(">").nl();
+        out.ascii("</").ascii(key.trim()).ascii(">").nl();
     }
 
     /** Emits XML text content with the five predefined entity escapes. */

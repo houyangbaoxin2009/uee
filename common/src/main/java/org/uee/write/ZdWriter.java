@@ -113,9 +113,9 @@ public final class ZdWriter extends Writer implements FieldVisitor {
     }
 
     @Override
-    public void generic(ElementKind kind, String registryName, String nameZh, String nameEn,
-            String[] tags, String[] extra) {
-        ElementExpander.generic(kind, registryName, nameZh, nameEn, tags, this);
+    public void generic(ElementKind kind, String namespace, String key, String nameZh,
+            String nameEn, String[] listValues, String[] extra) {
+        ElementExpander.generic(kind, namespace, key, nameZh, nameEn, listValues, extra, this);
     }
 
     @Override
@@ -179,6 +179,30 @@ public final class ZdWriter extends Writer implements FieldVisitor {
         }
         // Keep the array node's own open state irrelevant: the element node stays the parent.
         assert arrIdx >= 0;
+    }
+
+    @Override
+    public void records(String key, String[] columns, java.util.List<String[]> data) {
+        Row list = new Row();
+        list.kind = K_TABLE;
+        list.key = key;
+        list.child = data.size();
+        rows.add(list);
+        for (String[] row : data) {
+            Row record = new Row();
+            record.kind = K_TABLE;
+            record.key = "";
+            record.child = columns.length;
+            rows.add(record);
+            for (int c = 0; c < columns.length; c++) {
+                Row leaf = new Row();
+                leaf.kind = K_STRING;
+                leaf.key = columns[c];
+                leaf.str = c < row.length && row[c] != null ? pool.value(pool.intern(row[c])) : null;
+                rows.add(leaf);
+            }
+        }
+        countParent();
     }
 
     @Override

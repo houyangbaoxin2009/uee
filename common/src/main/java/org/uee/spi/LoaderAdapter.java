@@ -55,6 +55,19 @@ public interface LoaderAdapter {
     List<DebugSection> debugSections();
 
     /**
+     * Diagnostic records that need structure rather than a flat section: mod summaries, the
+     * dependency graph, namespace ownership, mixin configs and the findings derived from them.
+     *
+     * <p>Separate from {@link #debugSections()} because these are records of their own categories and
+     * flow through the normal sharded write path, so an automation consumer can read them as data
+     * rather than parse them out of a text block.
+     *
+     * <p>Default is empty, so a minimal adapter needs no change to compile.
+     */
+    default void collectDebugRecords(org.uee.config.ExportConfig config, ElementSink sink) {
+    }
+
+    /**
      * Capability probe used instead of version comparison.
      *
      * @param capability a stable capability key, e.g. {@code "data_components"} or

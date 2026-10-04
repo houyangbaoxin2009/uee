@@ -1,8 +1,13 @@
 package org.uee.mc;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
@@ -21,11 +26,15 @@ import net.minecraft.world.item.crafting.ShapedRecipe;
 import net.minecraft.world.item.crafting.ShapelessRecipe;
 import net.minecraft.world.level.block.Block;
 import org.uee.config.ExportConfig;
+import org.uee.debug.MixinConfig;
+import org.uee.debug.ModAnalyzer;
+import org.uee.debug.ModContainerScanner;
 import org.uee.model.BlockElement;
 import org.uee.model.DebugSection;
 import org.uee.model.ElementKind;
 import org.uee.model.EntityElement;
 import org.uee.model.ItemElement;
+import org.uee.model.ModElement;
 import org.uee.model.RecipeElement;
 import org.uee.spi.ElementSink;
 import org.uee.spi.LoaderAdapter;
@@ -125,6 +134,41 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         collectGenericRegistries(config, wanted, sink);
     }
 
+    /**
+     * Emits the diagnostic records: mod summaries, the dependency graph, namespace ownership, parsed
+     * mixin configs and the conflict findings derived from all of them.
+     *
+     * <p>Runs only for the categories that were asked for, and only touches loader metadata plus the
+     * mod containers on disk — no game state, so it is safe to run outside a world.
+     */
+    @Override
+    public void collectDebugRecords(ExportConfig config, ElementSink sink) {
+        List<ModElement> mods = loadedMods();
+        Map<String, ModContainerScanner.ContainerInfo> containers = new HashMap<>(mods.size() * 2);
+        List<MixinConfig> mixins = new ArrayList<>(16);
+        for (ModElement mod : mods) {
+            Path container = mod.container();
+            if (container == null) {
+                continue;
+            }
+            ModContainerScanner.ContainerInfo info = ModContainerScanner.inspect(container);
+            if (info == null) {
+                continue;
+            }
+            containers.put(mod.id(), info);
+            mixins.addAll(ModContainerScanner.readMixinConfigs(info, mod.id()));
+        }
+        ModAnalyzer.analyze(new ModAnalyzer.Context(mods, containers, mixins, observedNamespaces,
+                config.includePaths()), sink);
+    }
+
+    /** Namespaces seen while walking the registries, used to find unclaimed ones. */
+    private final Set<String> observedNamespaces = new HashSet<>();
+
+    private void note(String namespace) {
+        observedNamespaces.add(namespace);
+    }
+
     @Override
     public void collectDatapacks(ExportConfig config, Collection<ElementKind> wanted,
             ElementSink sink) {
@@ -171,6 +215,7 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
             if (!config.acceptsNamespace(id.getNamespace())) {
                 continue;
             }
+            note(id.getNamespace());
             Item item = registry.get(id);
             if (item == null) {
                 continue;
@@ -217,6 +262,7 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
             if (!config.acceptsNamespace(id.getNamespace())) {
                 continue;
             }
+            note(id.getNamespace());
             Block block = registry.get(id);
             if (block == null) {
                 continue;
@@ -247,6 +293,7 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
             if (!config.acceptsNamespace(id.getNamespace())) {
                 continue;
             }
+            note(id.getNamespace());
             EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(id);
             if (type == null) {
                 continue;
@@ -287,9 +334,10 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
             if (!config.acceptsNamespace(id.getNamespace())) {
                 continue;
             }
+            note(id.getNamespace());
             try {
                 String key = id.toLanguageKey(kind.singular());
-                sink.generic(kind, id.toString(),
+                sink.generic(kind, id.getNamespace(), id.toString(),
                         translator().translate(key, Translator.ZH_CN),
                         translator().translate(key, Translator.EN_US),
                         new String[0], new String[0]);
@@ -312,9 +360,10 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
             if (!config.acceptsNamespace(id.getNamespace())) {
                 continue;
             }
+            note(id.getNamespace());
             try {
                 String key = id.toLanguageKey("biome");
-                sink.generic(ElementKind.BIOME, id.toString(),
+                sink.generic(ElementKind.BIOME, id.getNamespace(), id.toString(),
                         translator().translate(key, Translator.ZH_CN),
                         translator().translate(key, Translator.EN_US),
                         new String[0], new String[0]);

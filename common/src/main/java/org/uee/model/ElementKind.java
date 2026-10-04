@@ -42,7 +42,15 @@ public enum ElementKind {
     /** Loaded mods (layer A). */
     MOD("mod", "mods"),
     /** Debug / environment information (layer A). */
-    DEBUG("debug", "debug");
+    DEBUG("debug", "debug"),
+    /** Namespace ownership map, including conflicts. */
+    NAMESPACE("namespace", "namespaces"),
+    /** Per-mod dependency graph, including reverse edges. */
+    DEPENDENCY("dependency", "dependencies"),
+    /** A diagnostic finding: something wrong or suspicious about the instance. */
+    CONFLICT("conflict", "conflicts"),
+    /** Parsed mixin configs: which classes a mod patches. */
+    MIXIN("mixin", "mixins");
 
     private final String singular;
     private final String plural;

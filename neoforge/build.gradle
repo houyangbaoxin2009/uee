@@ -1,5 +1,6 @@
 plugins {
-    id 'net.neoforged.moddev' version '2.0.28'
+    // Version taken from the sibling Subterra project's working build.
+    id 'net.neoforged.moddev' version '2.0.146'
 }
 
 base {
@@ -15,15 +16,27 @@ sourceSets {
 
 neoForge {
     version = project.neoforge_version
-    // ModDevGradle maps to Mojang's official names by default, matching the other three loaders so
-    // the shared code in common/src/mc/java compiles unchanged here too.
+    // ModDevGradle maps to Mojang's official names, matching the other three loaders so the shared
+    // code in common/src/mc/java compiles unchanged here too. Parchment is deliberately not enabled;
+    // see the note in gradle.properties.
 
     runs {
         client {
             client()
+            // Namespaces to load game tests from, so /test in a dev client can run UEE's tests.
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.archives_base_name
         }
         server {
             server()
+            programArgument '--nogui'
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.archives_base_name
+        }
+
+        // Runs every registered game test headlessly and exits with a non-zero status on failure,
+        // which is what makes the in-game layer checkable from a build script rather than by hand.
+        gameTestServer {
+            type = 'gameTestServer'
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.archives_base_name
         }
     }
 

@@ -68,9 +68,9 @@ public final class YamlWriter extends Writer implements FieldVisitor {
     }
 
     @Override
-    public void generic(ElementKind kind, String registryName, String nameZh, String nameEn,
-            String[] tags, String[] extra) {
-        ElementExpander.generic(kind, registryName, nameZh, nameEn, tags, this);
+    public void generic(ElementKind kind, String namespace, String key, String nameZh,
+            String nameEn, String[] listValues, String[] extra) {
+        ElementExpander.generic(kind, namespace, key, nameZh, nameEn, listValues, extra, this);
     }
 
     @Override
@@ -82,6 +82,11 @@ public final class YamlWriter extends Writer implements FieldVisitor {
 
     @Override
     public void element(ElementKind kind, String registryName) {
+        if (registryName == null) {
+            // Whole-document records carry their identity in an explicit field instead.
+            out.ascii("  -").nl();
+            return;
+        }
         out.ascii("  - registryName: ");
         yamlString(registryName);
         out.nl();
@@ -132,6 +137,24 @@ public final class YamlWriter extends Writer implements FieldVisitor {
 
     @Override
     public void end() {
+    }
+
+    @Override
+    public void records(String key, String[] columns, java.util.List<String[]> rows) {
+        key(key);
+        if (rows.isEmpty()) {
+            out.ascii("[]").nl();
+            return;
+        }
+        out.nl();
+        for (String[] row : rows) {
+            for (int c = 0; c < columns.length; c++) {
+                out.ascii(c == 0 ? "      - " : "        ");
+                out.ascii(columns[c]).ascii(": ");
+                yamlString(c < row.length ? row[c] : "");
+                out.nl();
+            }
+        }
     }
 
     private void key(String key) {

@@ -87,7 +87,7 @@ public class JsonWriter extends Writer {
     @Override
     public void item(ItemElement e) {
         beginRecord(ElementKind.ITEM);
-        out.ascii("{\"kind\":\"item\",\"registryName\":");
+        out.ascii("\"kind\":\"item\",\"registryName\":");
         Json.quote(out, e.registryName());
         out.ascii(",\"namespace\":");
         Json.quote(out, e.namespace());
@@ -110,7 +110,7 @@ public class JsonWriter extends Writer {
     @Override
     public void entity(EntityElement e) {
         beginRecord(ElementKind.ENTITY);
-        out.ascii("{\"kind\":\"entity\",\"registryName\":");
+        out.ascii("\"kind\":\"entity\",\"registryName\":");
         Json.quote(out, e.registryName());
         out.ascii(",\"namespace\":");
         Json.quote(out, e.namespace());
@@ -130,7 +130,7 @@ public class JsonWriter extends Writer {
     @Override
     public void block(BlockElement e) {
         beginRecord(ElementKind.BLOCK);
-        out.ascii("{\"kind\":\"block\",\"registryName\":");
+        out.ascii("\"kind\":\"block\",\"registryName\":");
         Json.quote(out, e.registryName());
         out.ascii(",\"namespace\":");
         Json.quote(out, e.namespace());
@@ -151,7 +151,7 @@ public class JsonWriter extends Writer {
     @Override
     public void recipe(RecipeElement e) {
         beginRecord(ElementKind.RECIPE);
-        out.ascii("{\"kind\":\"recipe\",\"type\":");
+        out.ascii("\"kind\":\"recipe\",\"type\":");
         Json.quote(out, e.type());
         if (e.id() != null) {
             out.ascii(",\"name\":");
@@ -196,7 +196,7 @@ public class JsonWriter extends Writer {
     @Override
     public void mod(ModElement e) {
         beginRecord(ElementKind.MOD);
-        out.ascii("{\"kind\":\"mod\",\"id\":");
+        out.ascii("\"kind\":\"mod\",\"id\":");
         Json.quote(out, e.id());
         out.ascii(",\"name\":");
         Json.quote(out, e.name());
@@ -218,8 +218,23 @@ public class JsonWriter extends Writer {
             out.ascii(",\"description\":");
             Json.quote(out, e.description());
         }
-        out.ascii(",\"dependencies\":");
-        Json.quoteArray(out, e.dependencies());
+        out.ascii(",\"dependencies\":[");
+        for (int i = 0; i < e.dependencies().length; i++) {
+            if (i > 0) {
+                out.u8(',');
+            }
+            org.uee.model.Dependency d = e.dependencies()[i];
+            out.ascii("{\"id\":");
+            Json.quote(out, d.id());
+            if (d.hasVersionRange()) {
+                out.ascii(",\"range\":");
+                Json.quote(out, d.versionRange());
+            }
+            out.ascii(",\"kind\":");
+            Json.quote(out, d.kind().name().toLowerCase(java.util.Locale.ROOT));
+            out.u8('}');
+        }
+        out.u8(']');
         out.ascii(",\"providers\":");
         Json.quoteArray(out, e.providers());
         if (e.sourceFile() != null) {
@@ -230,18 +245,18 @@ public class JsonWriter extends Writer {
     }
 
     @Override
-    public void generic(ElementKind kind, String registryName, String nameZh, String nameEn,
-            String[] tags, String[] extra) {
+    public void generic(ElementKind kind, String namespace, String key, String nameZh,
+            String nameEn, String[] listValues, String[] extra) {
         beginRecord(kind);
-        out.ascii("{\"kind\":");
+        out.ascii("\"kind\":");
         Json.quote(out, kind.singular());
-        out.ascii(",\"registryName\":");
-        Json.quote(out, registryName);
+        out.ascii(",\"key\":");
+        Json.quote(out, key);
         out.ascii(",\"namespace\":");
-        Json.quote(out, ItemElement.namespaceOf(registryName));
+        Json.quote(out, namespace);
         nameFields(nameZh, nameEn);
-        out.ascii(",\"tags\":");
-        Json.quoteArray(out, tags);
+        out.ascii(",\"values\":");
+        Json.quoteArray(out, listValues);
         if (extra != null) {
             for (int i = 0; i + 1 < extra.length; i += 2) {
                 out.u8(',');
@@ -256,7 +271,7 @@ public class JsonWriter extends Writer {
     @Override
     public void debug(DebugSection s) {
         beginRecord(ElementKind.DEBUG);
-        out.ascii("{\"kind\":\"debug\",\"name\":");
+        out.ascii("\"kind\":\"debug\",\"name\":");
         Json.quote(out, s.name());
         out.ascii(",\"entries\":{");
         for (int i = 0; i < s.size(); i++) {
@@ -267,7 +282,7 @@ public class JsonWriter extends Writer {
             out.u8(':');
             Json.quote(out, s.values()[i]);
         }
-        out.ascii("}}");
+        out.ascii("}");
         endRecord();
     }
 
@@ -329,13 +344,24 @@ public class JsonWriter extends Writer {
         }
     }
 
+    /**
+     * Opens a record object.
+     *
+     * <p>The enclosing brace is emitted here and closed by {@link #endRecord()} rather than written
+     * at each call site. Every writer emitting its own brace means every writer can forget one, and
+     * a forgotten brace yields a file whose size looks right and whose every line fails to parse —
+     * which is exactly the defect this pairing removes.
+     */
     private void beginRecord(ElementKind kind) {
         if (layout == Layout.GROUPED && count > 0) {
             out.u8(',');
         }
+        out.u8('{');
     }
 
+    /** Closes the record object opened by {@link #beginRecord(ElementKind)}. */
     private void endRecord() {
+        out.u8('}');
         if (layout == Layout.NDJSON) {
             out.nl();
         } else {

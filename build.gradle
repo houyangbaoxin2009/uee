@@ -19,42 +19,91 @@ subprojects {
 }
 
 /**
- * Compiles the Minecraft-independent core on its own.
+ * Compiles the complete core tree including the vendored codec, without {@code -Werror}.
  *
- * <p>common/src/main/java holds the model, SPI interfaces, writers, configuration and pipeline —
- * none of which mentions a game type. Being able to build it with no loader toolchain and no game
- * jar is the property that makes the output contract verifiable in isolation, so it gets its own
- * task rather than riding along with a loader build.
+ * <p>Runs first, because {@link #verifyCore} compiles against it. Separate from {@code verifyCore} so
+ * that it is still proven the vendored copy builds under this project's target, without its warnings
+ * becoming ours to fix — it is an upstream source drop that has to stay byte-identical.
+ */
+tasks.register('compileVendored', JavaCompile) {
+    description = 'Compiles the vendored zd codec to prove it builds under this target.'
+    group = 'verification'
+    source = fileTree('common/src/main/java') {
+        include 'org/tielang/**/*.java'
+    }
+    classpath = files()
+    destinationDirectory = layout.buildDirectory.dir('classes/compileVendored')
+    options.encoding = 'UTF-8'
+    options.release = project.java_version as Integer
+}
+
+/**
+ * Compiles the Minecraft-independent core under {@code -Werror}.
+ *
+ * <p>common/src/main/java/org/uee holds the model, SPI interfaces, writers, configuration, pipeline
+ * and the diagnostic layer — none of which mentions a game type. Building it with no loader toolchain
+ * and no game jar is the property that makes the output contract verifiable in isolation.
  */
 tasks.register('verifyCore', JavaCompile) {
-    description = 'Compiles the Minecraft-independent core (model, SPI, writers, pipeline).'
+    description = 'Compiles the Minecraft-independent core (model, SPI, writers, pipeline, analysis).'
     group = 'verification'
-    source = fileTree('common/src/main/java') { include '**/*.java' }
-    classpath = files()
+    dependsOn 'compileVendored'
+    source = fileTree('common/src/main/java') {
+        include 'org/uee/**/*.java'
+    }
+    classpath = files(layout.buildDirectory.dir('classes/compileVendored'))
     destinationDirectory = layout.buildDirectory.dir('classes/verifyCore')
     options.encoding = 'UTF-8'
     options.release = project.java_version as Integer
     options.compilerArgs << '-Xlint:all' << '-Werror'
 }
 
-/** Compiles the smoke and round-trip harnesses against verifyCore's output. */
+/** Compiles the smoke, round-trip and analysis harnesses against the core output. */
 tasks.register('verifyHarness', JavaCompile) {
-    description = 'Compiles the smoke test and the zd round-trip check.'
+    description = 'Compiles the smoke test, the zd round-trip check and the analysis test.'
     group = 'verification'
-    dependsOn 'verifyCore'
+    dependsOn 'verifyCore', 'compileVendored'
     source = fileTree('common/src/test/java') { include '**/*.java' }
-    classpath = files(layout.buildDirectory.dir('classes/verifyCore'))
+    classpath = files(layout.buildDirectory.dir('classes/verifyCore'),
+            layout.buildDirectory.dir('classes/compileVendored'))
     destinationDirectory = layout.buildDirectory.dir('classes/verifyHarness')
     options.encoding = 'UTF-8'
     options.release = project.java_version as Integer
 }
 
+/** Classpath shared by the harness runners. */
+def harnessClasspath = files(layout.buildDirectory.dir('classes/verifyCore'),
+        layout.buildDirectory.dir('classes/compileVendored'),
+        layout.buildDirectory.dir('classes/verifyHarness'))
+
 tasks.register('smokeTest', JavaExec) {
     description = 'Runs the end-to-end pipeline over a synthetic adapter.'
     group = 'verification'
     dependsOn 'verifyHarness'
-    classpath = files(layout.buildDirectory.dir('classes/verifyCore'),
-            layout.buildDirectory.dir('classes/verifyHarness'))
+    classpath = harnessClasspath
     mainClass = 'org.uee.SmokeTest'
     args = [layout.buildDirectory.dir('smoke').get().asFile.absolutePath]
+}
+
+/**
+ * Runs the diagnostic-layer checks over generated jar fixtures.
+ *
+ * <p>Separate from the smoke test because it covers a different claim: the smoke test proves the
+ * pipeline and every writer work, while this proves container scanning, mixin parsing and the
+ * dependency/conflict analysis work — the parts that make the debug output worth having.
+ */
+tasks.register('debugTest', JavaExec) {
+    description = 'Runs the container-scan, mixin-parse and conflict-analysis checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.DebugAnalysisTest'
+    args = [layout.buildDirectory.dir('debug-test').get().asFile.absolutePath]
+}
+
+/** Runs every core check. */
+tasks.register('verifyAll') {
+    description = 'Runs every Minecraft-independent check.'
+    group = 'verification'
+    dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'debugTest'
 }

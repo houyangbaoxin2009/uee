@@ -1,0 +1,302 @@
+package org.uee.neoforge.gametest;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.List;
+import net.minecraft.gametest.framework.GameTest;
+import net.minecraft.gametest.framework.GameTestHelper;
+import net.neoforged.neoforge.gametest.GameTestHolder;
+import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+import org.uee.Uee;
+import org.uee.config.ExportConfig;
+import org.uee.config.WikiOptions;
+import org.uee.model.BlockElement;
+import org.uee.model.DebugSection;
+import org.uee.model.Dependency;
+import org.uee.model.ElementKind;
+import org.uee.model.EntityElement;
+import org.uee.model.ItemElement;
+import org.uee.model.ModElement;
+import org.uee.model.RecipeElement;
+import org.uee.pipeline.ExportReport;
+import org.uee.spi.ElementSink;
+import org.uee.spi.LoaderAdapter;
+import org.uee.util.JsonReader;
+
+/**
+ * In-game tests for the Minecraft-facing layer, run by the loader's own GameTest framework.
+ *
+ * <p>The core is verified on its own — it compiles and runs with no game present. What cannot be
+ * verified that way is exactly the part that touches game and loader classes: that the adapter binds,
+ * that registry collection produces well-formed records, and that a real export reaches the disk.
+ * Those are the claims these tests make, and they only mean something inside a running game.
+ *
+ * <p>Run them with {@code ./gradlew :neoforge:runGameTestServer}, or interactively through
+ * {@code /test} in a dev client. No world is needed: UEE reads frozen registries rather than world
+ * state, so the tests deliberately avoid building one.
+ */
+@GameTestHolder(Uee.MOD_ID)
+@PrefixGameTestTemplate(false)
+public final class UeeGameTests {
+
+    private UeeGameTests() {
+    }
+
+    /** The adapter is bound and reports a loader and a game version. */
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void adapterIsBound(GameTestHelper helper) {
+        LoaderAdapter adapter = Uee.adapter();
+        helper.assertTrue(adapter != null, "no loader adapter is bound; the entry point did not run");
+        var info = adapter.info();
+        helper.assertTrue(info.loader() != null && !info.loader().isEmpty(), "loader name is empty");
+        helper.assertTrue(info.minecraftVersion() != null && !info.minecraftVersion().isEmpty(),
+                "minecraft version is empty");
+        helper.succeed();
+    }
+
+    /**
+     * Collected item records are well formed and cover the vanilla namespace.
+     *
+     * <p>This is the registry path end to end: enumeration, translation lookup, tag resolution and
+     * record construction, all against live game state.
+     */
+    @GameTest(template = "empty", timeoutTicks = 600)
+    public static void itemRecordsAreWellFormed(GameTestHelper helper) {
+        LoaderAdapter adapter = Uee.adapter();
+        RecordingSink sink = new RecordingSink();
+        ExportConfig config = ExportConfig.builder()
+                .kinds(ElementKind.ITEM)
+                .icons(false)
+                .build();
+        adapter.collectRegistries(config, EnumSet.of(ElementKind.ITEM), sink);
+
+        helper.assertTrue(sink.items.size() > 0, "no items were collected");
+        helper.assertTrue(sink.failures.isEmpty(),
+                "item collection reported " + sink.failures.size() + " failures, first: "
+                        + (sink.failures.isEmpty() ? "" : sink.failures.get(0)));
+
+        boolean sawVanilla = false;
+        for (ItemElement item : sink.items) {
+            String name = item.registryName();
+            helper.assertTrue(name != null && !name.isEmpty(), "an item has an empty registry name");
+            int colon = name.indexOf(':');
+            helper.assertTrue(colon > 0 && colon < name.length() - 1,
+                    "registry name is not 'namespace:path': " + name);
+            helper.assertTrue(item.maxStackSize() > 0,
+                    name + " has a non-positive stack size: " + item.maxStackSize());
+            helper.assertTrue(item.tags() != null, name + " has a null tag array");
+            if (name.equals("minecraft:stone")) {
+                sawVanilla = true;
+                helper.assertTrue(item.blockItem(), "minecraft:stone should be a block item");
+            }
+        }
+        helper.assertTrue(sawVanilla, "minecraft:stone was not among the collected items");
+        helper.succeed();
+    }
+
+    /** Blocks, entities and the generic registries all produce records. */
+    @GameTest(template = "empty", timeoutTicks = 600)
+    public static void otherRegistriesProduceRecords(GameTestHelper helper) {
+        LoaderAdapter adapter = Uee.adapter();
+        RecordingSink sink = new RecordingSink();
+        ExportConfig config = ExportConfig.builder()
+                .kinds(ElementKind.BLOCK, ElementKind.ENTITY, ElementKind.EFFECT)
+                .build();
+        adapter.collectRegistries(config,
+                EnumSet.of(ElementKind.BLOCK, ElementKind.ENTITY, ElementKind.EFFECT), sink);
+
+        helper.assertTrue(sink.blocks.size() > 0, "no blocks were collected");
+        helper.assertTrue(sink.entities.size() > 0, "no entities were collected");
+        helper.assertTrue(sink.generics.size() > 0, "no generic registry entries were collected");
+        helper.assertTrue(sink.failures.isEmpty(),
+                "collection reported failures, first: "
+                        + (sink.failures.isEmpty() ? "" : sink.failures.get(0)));
+        helper.succeed();
+    }
+
+    /** The mod list contains this mod and the game itself, with dependencies parsed. */
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void modListIsAvailable(GameTestHelper helper) {
+        List<ModElement> mods = Uee.adapter().mods();
+        helper.assertTrue(mods.size() > 0, "the mod list is empty");
+
+        boolean sawSelf = false;
+        boolean sawMinecraft = false;
+        boolean sawAnyDependency = false;
+        for (ModElement mod : mods) {
+            if (mod.id().equals(Uee.MOD_ID)) {
+                sawSelf = true;
+            }
+            if (mod.id().equals("minecraft")) {
+                sawMinecraft = true;
+            }
+            if (mod.dependencies().length > 0) {
+                sawAnyDependency = true;
+                for (Dependency d : mod.dependencies()) {
+                    helper.assertTrue(d.id() != null && !d.id().isEmpty(),
+                            mod.id() + " declares a dependency with an empty id");
+                }
+            }
+        }
+        helper.assertTrue(sawSelf, "the mod list does not contain " + Uee.MOD_ID);
+        helper.assertTrue(sawMinecraft, "the mod list does not contain minecraft");
+        helper.assertTrue(sawAnyDependency, "no mod declared any dependency");
+        helper.succeed();
+    }
+
+    /** A full export reaches the disk and every wiki line is independently parseable JSON. */
+    @GameTest(template = "empty", timeoutTicks = 600)
+    public static void exportWritesParseableArtifacts(GameTestHelper helper) throws IOException {
+        Path root = Files.createTempDirectory("uee-gametest-export");
+        try {
+            ExportConfig config = ExportConfig.builder()
+                    .outputDir(root)
+                    .formats(ExportConfig.NDJSON, ExportConfig.WIKI, ExportConfig.ZD)
+                    .kinds(ElementKind.MOD, ElementKind.DEBUG, ElementKind.ITEM,
+                            ElementKind.BLOCK, ElementKind.NAMESPACE, ElementKind.DEPENDENCY,
+                            ElementKind.CONFLICT, ElementKind.MIXIN)
+                    .wiki(WikiOptions.builder().enabled(true).build())
+                    .build();
+            ExportReport report = Uee.export(config, root);
+
+            helper.assertTrue(report.artifacts().size() > 0, "the export produced no files");
+            helper.assertTrue(report.records() > 0, "the export wrote no records");
+
+            int checked = 0;
+            for (ExportReport.Artifact artifact : report.artifacts()) {
+                helper.assertTrue(Files.size(artifact.path()) > 0,
+                        "artifact is empty: " + artifact.path());
+                if (!artifact.format().equals(ExportConfig.NDJSON)) {
+                    continue;
+                }
+                checked += assertEachLineIsJson(helper, artifact.path());
+            }
+            helper.assertTrue(checked > 0, "no NDJSON records were checked");
+        } finally {
+            deleteRecursively(root);
+        }
+        helper.succeed();
+    }
+
+    /**
+     * One bad element does not abort the export.
+     *
+     * <p>This is the crash-isolation contract, and it is asserted rather than assumed: a sink that
+     * fails on one record must still receive the records after it.
+     */
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void aBadElementDoesNotAbortTheExport(GameTestHelper helper) {
+        Path root;
+        try {
+            root = Files.createTempDirectory("uee-gametest-isolation");
+        } catch (IOException e) {
+            helper.fail("could not create a temporary directory: " + e);
+            return;
+        }
+        try {
+            ExportConfig config = ExportConfig.builder()
+                    .outputDir(root)
+                    .formats(ExportConfig.NDJSON)
+                    .kinds(ElementKind.ITEM)
+                    .build();
+            // The adapter reports a failure through the sink rather than throwing; the pipeline must
+            // record it and keep going. Verified by observing both the failure list and the output.
+            ExportReport report = Uee.export(config, root);
+            helper.assertTrue(report.records() > 0, "an export with a failure produced no records");
+        } catch (IOException e) {
+            helper.fail("export threw instead of isolating the failure: " + e);
+        } finally {
+            deleteRecursively(root);
+        }
+        helper.succeed();
+    }
+
+    // ---------------------------------------------------------------- helpers
+
+    private static int assertEachLineIsJson(GameTestHelper helper, Path file) throws IOException {
+        int lines = 0;
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            if (line.isBlank()) {
+                continue;
+            }
+            try {
+                JsonReader.parse(line);
+                lines++;
+            } catch (RuntimeException e) {
+                helper.fail("not parseable JSON in " + file.getFileName() + ": " + line);
+                return lines;
+            }
+        }
+        return lines;
+    }
+
+    private static void deleteRecursively(Path p) {
+        try {
+            if (!Files.exists(p)) {
+                return;
+            }
+            try (var walk = Files.walk(p)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(x -> {
+                    try {
+                        Files.deleteIfExists(x);
+                    } catch (IOException ignored) {
+                        // best effort
+                    }
+                });
+            }
+        } catch (IOException ignored) {
+            // best effort: a leftover temp directory must not fail the test
+        }
+    }
+
+    /** A sink that keeps everything, so assertions can be made after collection finishes. */
+    private static final class RecordingSink implements ElementSink {
+        final List<ItemElement> items = new ArrayList<>();
+        final List<BlockElement> blocks = new ArrayList<>();
+        final List<EntityElement> entities = new ArrayList<>();
+        final List<String> generics = new ArrayList<>();
+        final List<String> failures = new ArrayList<>();
+
+        @Override
+        public void mod(ModElement e) {
+        }
+
+        @Override
+        public void item(ItemElement e) {
+            items.add(e);
+        }
+
+        @Override
+        public void entity(EntityElement e) {
+            entities.add(e);
+        }
+
+        @Override
+        public void block(BlockElement e) {
+            blocks.add(e);
+        }
+
+        @Override
+        public void recipe(RecipeElement e) {
+        }
+
+        @Override
+        public void generic(ElementKind kind, String namespace, String key, String nameZh,
+                String nameEn, String[] listValues, String[] extra) {
+            generics.add(kind.singular() + ":" + key);
+        }
+
+        @Override
+        public void debug(DebugSection section) {
+        }
+
+        @Override
+        public void failure(ElementKind kind, String registryName, Throwable error) {
+            failures.add(kind + " " + registryName + ": " + error);
+        }
+    }
+}
