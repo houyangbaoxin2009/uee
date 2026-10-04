@@ -14,8 +14,13 @@ public final class WriterFactory {
     private WriterFactory() {
     }
 
-    /** Token used by {@link org.uee.config.WikiOptions} to request the wiki projection. */
-    public static final String WIKI = "wiki";
+    /**
+     * Token for the wiki projection.
+     *
+     * <p>Aliased to the definition in {@link ExportConfig} rather than repeating the literal: two
+     * constants naming the same token is one edit away from them disagreeing.
+     */
+    public static final String WIKI = ExportConfig.WIKI;
 
     public static Writer create(String format, ExportConfig config, StringPool pool) {
         return switch (format) {

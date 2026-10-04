@@ -7,7 +7,10 @@
 * [简介 / Introduction](#简介--introduction)
 * [为什么做 / Why this exists](#为什么做--why-this-exists)
 * [支持矩阵 / Support matrix](#支持矩阵--support-matrix)
+* [三个接口 / Three interfaces](#三个接口--three-interfaces)
 * [输出格式 / Output formats](#输出格式--output-formats)
+* [输出布局 / Output layout](#输出布局--output-layout)
+* [搜集与分析 / Collection and analysis](#搜集与分析--collection-and-analysis)
 * [架构 / Architecture](#架构--architecture)
 * [开发状态 / Status](#开发状态--status)
 * [License](#license)
@@ -49,8 +52,8 @@ submission loop.
 | --- | --- |
 | Fabric | 首发 / first release |
 | NeoForge | 首发 / first release |
-| Forge | 随后 / follow-up |
-| Quilt | 随后 / follow-up |
+| Forge | 首发 / first release |
+| Quilt | 首发 / first release |
 
 导出能力按**版本分层**设计，而不是按版本号清单硬编码：
 
@@ -61,71 +64,152 @@ Export capability is designed in **version layers**, never hardcoded against a v
 * **B 层 · 版本适配 / Layer B — version adapted**：注册表、数据包、资产。通过公共源集加
   版本差异层实现，首发锚定 1.21.x。
 
+## 三个接口 / Three interfaces
+
+同一套能力有三个入口。三者都汇聚到**同一个已解析的配置对象**，因此一个设置在哪个入口写，
+含义都一样。
+
+The same capability has three entry points. All three converge on **one resolved configuration
+object**, so a setting means the same thing whichever way it is expressed.
+
+| 接口 / Interface | 入口 / Entry |
+| --- | --- |
+| 函数 API / function API | `org.uee.Uee` 的静态方法 / the static methods on `org.uee.Uee` |
+| 命令 / command | 游戏内 `/uee …` / `/uee …` in game |
+| 配置文件 / config file | `<游戏目录>/config/uee.data.tie` |
+
+配置文件用 **`tie:data`（td）语法**，与 tie 生态其它文件一致；**支持 `//` 注释**，
+且生成的配置文件**带逐键说明**——这是选择该格式而非 JSON 的核心原因。
+
+The config file is written in **`tie:data` (td) syntax**, as elsewhere in the tie ecosystem. It
+**supports `//` comments**, and a generated config **documents every key in place** — which is the
+main reason this format was chosen over JSON.
+
+```text
+type tie<data>
+
+uee = [
+    // ─── 输出在哪 / where ──────────────────────────────────────────────
+    output = "exports/uee"                  // 输出根目录 / output root
+    formats = ["json"]                      // 格式可多选 / any number of formats
+    kinds = ["common"]                      // 内容类别 / which categories
+    analyze = true                          // 是否分析 / run the analysis
+    analysis_separate = true                // 分析独立成包 / analysis in its own bundle
+]
+```
+
+配置文件是**部分描述**：只写想改的键，没写的保持默认。层次为
+`内置默认 → 配置文件 → 命令行 → 程序调用`。键名拼错会被**报告**而不是静默忽略。
+
+The file is **partial**: name only the keys you want to change. The layering is
+`built-in defaults → config file → command line → programmatic call`. An unrecognised key is
+**reported**, never silently ignored.
+
+### 命令 / Commands
+
+```text
+/uee                              一键导出：默认设置直接跑
+/uee export [类别]                选择导出哪些内容
+/uee formats <格式>               选择输出格式
+/uee data | analysis              只跑其中一个半场
+/uee analyze                      只做检查，不导出
+/uee kinds | formats              列出可用词表
+/uee status                       加载器、版本、生效默认值
+/uee config show|path|save|template|reload
+```
+
+一键导出的默认行为：**`json` 格式 + n 个数据包 + 1 个分析包**（n = 所选数据类目数）。
+
+The one-key default is **`json`, n data packages, and one analysis package** (n being the number of
+data categories selected).
+
 ## 输出格式 / Output formats
 
 | 格式 / Format | 说明 / Notes |
 | --- | --- |
-| `json` | 通用交换格式；另支持逐行流式变体 / general interchange; a line-streaming variant is also provided |
-| `tie:data` | tie 生态的文本数据格式（td）/ the tie-ecosystem text data format (td) |
-| `zd` | tie 生态的二进制序列化格式，列式编码加内容指纹 / the tie-ecosystem binary serialization, columnar with content fingerprints |
+| `json` | 通用分组文档 / a grouped document, readable anywhere |
+| `ndjson` | 逐行一条，流式友好；百科导入端吃这个形状 / one record per line, streaming; the shape importers consume |
+| `wiki` | 百科投影，导入端直接可用 / the projection an importer reads directly |
+| `td` | tie 生态的文本数据格式 / the tie-ecosystem text data format |
+| `zd` | tie 生态的二进制序列化，列式编码加内容指纹 / the tie-ecosystem binary serialization |
 | `yaml` | 便于人工阅读与编辑 / for human reading and editing |
 | `toml` | 配置风格的结构表达 / configuration-style structure |
 | `xml` | 与传统工具链对接 / interop with legacy toolchains |
 
-输出模式可配置：选择格式、选择元素类目、按命名空间或模组过滤、投影字段、设置分片与内存上限。
+可选元素类目：`mods items blocks entities recipes effects fluids enchantments damage_types
+biomes dimensions structures sounds particles attributes creative_tabs namespaces dependencies
+conflicts mixins`，另有组词 `all` / `data` / `analysis` / `common`。
 
-Output mode is configurable: pick formats and element categories, filter by namespace or mod,
-project fields, and set sharding and memory limits.
+Available categories, plus the group tokens `all` / `data` / `analysis` / `common`.
+
+## 输出布局 / Output layout
+
+```text
+exports/uee/                     数据包 / data bundles
+  items/example/example-items.json
+  items/minecraft/minecraft-items.json
+  recipes/example/example-recipes.json
+  ...
+exports/uee-analysis/            分析包 / the analysis bundle
+  conflicts/_global/_global-conflicts.json
+  dependencies/example/example-dependencies.json
+  ...
+```
+
+三个独立选项控制布局：**分析是否独立成包**、**每个类目是否一个子目录**、**是否按命名空间分片**。
+把分析放在旁路，是为了让数据那半可以单独交给下游，不必带着诊断一起走。
+
+Three independent options control this: whether the analysis is its own bundle, whether each
+category gets a sub-directory, and whether shards are grouped by namespace. Keeping the analysis
+aside lets the data half be handed on by itself, without the diagnostics riding along.
+
+## 搜集与分析 / Collection and analysis
+
+**两者解耦。** 搜集只把观察到的**事实**记录到一个上下文，不知道分析的存在；分析只读这个上下文，
+不知道事实是怎么来的。管线把两者接起来，并且可以只跑其中一半。
+
+**The two are decoupled.** Collection records what it saw into a context and knows nothing about
+analyses; the analyses read that context and know nothing about how it was gathered. The pipeline
+joins them, and can run either half alone.
+
+分析被明确分成两个**阶段**，这不是装饰：
+
+Analyses declare one of two **stages**, and this is not decoration:
+
+| 阶段 / Stage | 需要 / Needs | 例 / Examples |
+| --- | --- | --- |
+| 搜集前 / pre-collection | 加载器元数据、模组容器 / loader metadata, mod containers | 依赖图与冲突 · 容器可读性 · Mixin 目标 · 命名空间认领 |
+| 搜集后 / post-collection | 注册表已被遍历过 / the registry walk to have happened | 孤儿命名空间 · 覆盖度报告 |
+
+一个读注册表观察的检查若在搜集前运行，会报"什么都没发现"——那读起来像一份健康证明，实际是
+"没问过"。阶段划分让这种情况不可能发生：没搜集就不跑后置检查。
+
+A check that reads registry observations and runs before collection reports "nothing found", which
+reads as a clean bill of health rather than as "not asked". The stage split makes that impossible:
+no collection, no post-collection checks.
 
 ## 架构 / Architecture
 
-分层为：加载器适配层（自写薄 SPI）· 采集引擎 · 规范化 · 序列化写端 · 触发层。
-导出走两阶段流水线：主线程在一帧内完成只读快照，随后由工作线程并行编码并按模组分片落盘。
+分层为：加载器适配层（自写薄 SPI）· 采集引擎 · 规范化 · 分析模块 · 序列化写端 · 配置层 · 触发层。
+导出走两阶段流水线：主线程在一帧内完成只读快照，随后由工作线程并行编码并按分片落盘。
 
 The layers are: loader adapter (a hand-written thin SPI) · collection engine · normalization ·
-serialization writers · triggers. Export runs as a two-phase pipeline: a read-only snapshot
-completed within a single frame on the main thread, then parallel encoding and per-mod sharded
-output on worker threads.
+analysis module · serialization writers · configuration · triggers. Export runs as a two-phase
+pipeline: a read-only snapshot within a single frame on the main thread, then parallel encoding and
+sharded output on worker threads.
 
-## 用法 / Usage
+单个元素采集失败**不会中断导出**；失败项单独列出。
 
-游戏内（需要权限等级 2）：
-
-```text
-/uee status        显示加载器、游戏版本与已加载模组数量
-/uee export        导出百科模式（NDJSON + 百科投影）
-/uee export-all    一次导出全部格式
-```
-
-产物写入 `<游戏目录>/exports/uee/`，按命名空间与类目分片。
-
-* 每个分片只承载一个元素类目，文件名形如 `<命名空间>-<类目>.<扩展名>`。
-* 百科投影写入 `<命名空间>/Json/<命名空间>/<命名空间>-<类目>.json`，即导入端期望的位置。
-* 单个元素采集失败**不会中断导出**，失败项单独列出。
-
-In game (permission level 2):
-
-```text
-/uee status        show loader, game version and loaded mod count
-/uee export        export wiki mode (NDJSON plus the wiki projection)
-/uee export-all    export every format in one pass
-```
-
-Artifacts go to `<game dir>/exports/uee/`, sharded by namespace and category.
-
-* Each shard carries exactly one element category, named `<namespace>-<category>.<ext>`.
-* The wiki projection is written to `<namespace>/Json/<namespace>/<namespace>-<category>.json`,
-  where an importer expects to find it.
-* One failing element **never aborts the export**; failures are reported separately.
+One failing element **never aborts the export**; failures are listed separately.
 
 ## 开发状态 / Status
 
-**实现中**：核心（模型、SPI、全部八种写端、两阶段分片流水线、崩溃隔离）已落地并通过验证；
+**实现中**：核心（模型、SPI、八种写端、两阶段分片流水线、崩溃隔离、分析模块、配置层）已落地并通过验证；
 四个加载器的构建脚本与适配层已就位，尚未在联网环境编译过。
 
-**In progress**: the core — model, SPI, all eight writers, the two-phase sharded pipeline and crash
-isolation — is implemented and verified; the four loaders' build scripts and adapters are in place
-and have not yet been compiled against the game.
+**In progress**: the core — model, SPI, eight writers, the two-phase sharded pipeline, crash
+isolation, the analysis module and the configuration layer — is implemented and verified; the four
+loaders' build scripts and adapters are in place and have not yet been compiled against the game.
 
 ## License
 

@@ -24,14 +24,16 @@ public final class ExportReport {
     private final long records;
     private final long bytes;
     private final long millis;
+    private final int findings;
 
     ExportReport(Path root, List<Artifact> artifacts, List<String> failures, long records,
-            long millis) {
+            long millis, int findings) {
         this.root = root;
         this.artifacts = artifacts;
         this.failures = failures;
         this.records = records;
         this.millis = millis;
+        this.findings = findings;
         long total = 0;
         for (Artifact a : artifacts) {
             total += a.bytes();
@@ -67,6 +69,11 @@ public final class ExportReport {
         return failures.isEmpty();
     }
 
+    /** How many findings the analyses produced, whether or not they were written out. */
+    public int findings() {
+        return findings;
+    }
+
     /** A short human-readable summary, in the same shape an import log reports progress. */
     public String summary() {
         StringBuilder sb = new StringBuilder(128);
@@ -74,6 +81,9 @@ public final class ExportReport {
                 .append(records).append(" records, ")
                 .append(bytes / 1024).append(" KiB in ")
                 .append(millis).append(" ms");
+        if (findings > 0) {
+            sb.append(", ").append(findings).append(" findings");
+        }
         if (!failures.isEmpty()) {
             sb.append(", ").append(failures.size()).append(" failures");
         }

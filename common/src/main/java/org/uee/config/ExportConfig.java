@@ -8,13 +8,24 @@ import java.util.Set;
 import org.uee.model.ElementKind;
 
 /**
- * Resolved export configuration.
+ * The one resolved description of a run.
  *
- * <p>Every option is here rather than hardcoded, with a default that is a starting point and not a
- * constraint — the project's standing rule is that options and parameters are configurable.
+ * <p>Every interface produces this and nothing else. The command surface parses into it, the config
+ * file loads into it, the programmatic API takes it, and the pipeline consumes it. That funnel is the
+ * point: with four loaders and three interfaces, anything that let a second shape exist would give
+ * twelve paths to keep in agreement, and the one that drifted would do so silently.
  *
  * <p>Immutable; build one through {@link Builder}. A config is cheap to copy and is shared by the
  * whole pipeline, including the per-shard encoders.
+ *
+ * <h2>What is configurable</h2>
+ * <ul>
+ *   <li><b>which content</b> — {@link #kinds()}, plus namespace and mod filters
+ *   <li><b>which format</b> — {@link #formats()}, several at once if wanted
+ *   <li><b>where</b> — {@link #outputDir()}, and {@link #packagePerKind()} for the layout under it
+ *   <li><b>whether to analyse</b> — {@link #analyze()}
+ *   <li><b>whether analysis is bundled</b> — {@link #analysisSeparate()}
+ * </ul>
  */
 public final class ExportConfig {
 
@@ -32,8 +43,15 @@ public final class ExportConfig {
     public static final String TOML = "toml";
     /** XML. */
     public static final String XML = "xml";
+    /** The wiki projection, readable by the MC百科 import pipelines. */
+    public static final String WIKI = "wiki";
+
+    /** Every format this build can write, in the order the command surface lists them. */
+    public static final String[] ALL_FORMATS =
+            {JSON, WIKI, NDJSON, TD, ZD, YAML, TOML, XML};
 
     private final Path outputDir;
+    private final String packageName;
     private final Set<String> formats;
     private final Set<ElementKind> kinds;
     private final Set<String> includeNamespaces;
@@ -47,12 +65,17 @@ public final class ExportConfig {
     private final long memoryLimitBytes;
     private final int threads;
     private final boolean includePaths;
+    private final boolean analyze;
+    private final boolean analysisSeparate;
+    private final boolean packagePerKind;
     private final WikiOptions wiki;
 
     private ExportConfig(Builder b) {
         this.outputDir = b.outputDir;
+        this.packageName = b.packageName;
         this.formats = Collections.unmodifiableSet(new LinkedHashSet<>(b.formats));
-        this.kinds = Collections.unmodifiableSet(b.kinds.isEmpty() ? EnumSet.allOf(ElementKind.class) : b.kinds);
+        this.kinds = Collections.unmodifiableSet(
+                b.kinds.isEmpty() ? EnumSet.allOf(ElementKind.class) : b.kinds);
         this.includeNamespaces = Collections.unmodifiableSet(new LinkedHashSet<>(b.includeNamespaces));
         this.excludeNamespaces = Collections.unmodifiableSet(new LinkedHashSet<>(b.excludeNamespaces));
         this.excludeMods = Collections.unmodifiableSet(new LinkedHashSet<>(b.excludeMods));
@@ -64,11 +87,19 @@ public final class ExportConfig {
         this.memoryLimitBytes = b.memoryLimitBytes;
         this.threads = b.threads;
         this.includePaths = b.includePaths;
+        this.analyze = b.analyze;
+        this.analysisSeparate = b.analysisSeparate;
+        this.packagePerKind = b.packagePerKind;
         this.wiki = b.wiki;
     }
 
     public Path outputDir() {
         return outputDir;
+    }
+
+    /** Name of the export bundle, used as the directory under the output root. */
+    public String packageName() {
+        return packageName;
     }
 
     public Set<String> formats() {
@@ -131,6 +162,33 @@ public final class ExportConfig {
         return includePaths;
     }
 
+    /** Whether to run the analysis at all. Off means data only. */
+    public boolean analyze() {
+        return analyze;
+    }
+
+    /**
+     * Whether the analysis output is kept apart from the data output.
+     *
+     * <p>Off (the default) writes the analysis under the same bundle, as one more package among the
+     * others. On writes it to a sibling directory, which is what you want when the data half is going
+     * to one consumer and the diagnostic half to another — a bug report, say, where the data does not
+     * belong.
+     */
+    public boolean analysisSeparate() {
+        return analysisSeparate;
+    }
+
+    /**
+     * Whether each element category is written into its own sub-directory.
+     *
+     * <p>On by default. Off flattens everything into the bundle root, which is what a consumer with a
+     * fixed expectation of the directory layout needs.
+     */
+    public boolean packagePerKind() {
+        return packagePerKind;
+    }
+
     public WikiOptions wiki() {
         return wiki;
     }
@@ -158,20 +216,86 @@ public final class ExportConfig {
         return includeNamespaces.isEmpty() || includeNamespaces.contains(ns);
     }
 
+    /** A copy of this config with different content categories. */
+    public ExportConfig withKinds(Set<ElementKind> newKinds) {
+        Builder b = toBuilder().kinds(newKinds.toArray(new ElementKind[0]));
+        return b.build();
+    }
+
+    /** A copy of this config with different formats. */
+    public ExportConfig withFormats(Set<String> newFormats) {
+        return toBuilder().formats(newFormats.toArray(new String[0])).build();
+    }
+
+    /** A copy of this config with analysis disabled. */
+    public ExportConfig withoutAnalysis() {
+        return toBuilder().analyze(false).build();
+    }
+
+    /** A builder pre-filled with this config, for producing a modified copy. */
+    public Builder toBuilder() {
+        Builder b = new Builder();
+        b.outputDir = outputDir;
+        b.packageName = packageName;
+        b.formats = new LinkedHashSet<>(formats);
+        b.kinds = kinds.isEmpty() ? EnumSet.noneOf(ElementKind.class) : EnumSet.copyOf(kinds);
+        b.includeNamespaces = new LinkedHashSet<>(includeNamespaces);
+        b.excludeNamespaces = new LinkedHashSet<>(excludeNamespaces);
+        b.excludeMods = new LinkedHashSet<>(excludeMods);
+        b.icons = icons;
+        b.pretty = pretty;
+        b.incremental = incremental;
+        b.shardByNamespace = shardByNamespace;
+        b.shardSize = shardSize;
+        b.memoryLimitBytes = memoryLimitBytes;
+        b.threads = threads;
+        b.includePaths = includePaths;
+        b.analyze = analyze;
+        b.analysisSeparate = analysisSeparate;
+        b.packagePerKind = packagePerKind;
+        b.wiki = wiki;
+        return b;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
 
-    /** Default configuration: NDJSON into {@code exports/}, no icons, sharded per namespace. */
+    /**
+     * The one-key default, which is what {@code /uee} with no arguments runs.
+     *
+     * <p>Three choices, each deliberate:
+     *
+     * <ul>
+     *   <li><b>json</b> — universally readable, and the format that needs no explanation to a consumer.
+     *       {@code ndjson} is the streaming equivalent and is one token away.
+     *   <li><b>every category in {@code common}</b> — the registries a wiki entry is built from plus
+     *       the datapack content that describes how they are obtained. Property-style categories are
+     *       omitted because they are large and rarely edited.
+     *   <li><b>analysis kept as its own package</b> — so the data half can be handed to a consumer
+     *       without the diagnostics riding along. This is the "+1" in "n data packages plus one
+     *       analysis package": each selected data category becomes a package, and the analysis forms
+     *       one more.
+     * </ul>
+     */
     public static ExportConfig defaults() {
         return builder().build();
+    }
+
+    /** The default output root under a game directory. */
+    public static Path defaultOutputDir(Path gameDirectory) {
+        return gameDirectory.resolve("exports").resolve(org.uee.Uee.MOD_ID);
     }
 
     /** Mutable builder with the documented defaults. */
     public static final class Builder {
         private Path outputDir = Path.of("exports");
-        private Set<String> formats = new LinkedHashSet<>(Set.of(NDJSON));
-        private Set<ElementKind> kinds = EnumSet.noneOf(ElementKind.class);
+        private String packageName = "uee-export";
+        private Set<String> formats = new LinkedHashSet<>(Set.of(JSON));
+        // The common set, not "everything": biomes, dimensions and structures are large and rarely
+        // edited, so a default that includes them makes the first run needlessly expensive. An
+        // explicitly empty selection still means all, which is how a caller asks for everything.
+        private Set<ElementKind> kinds = Tokens.commonKinds();
         private Set<String> includeNamespaces = new LinkedHashSet<>();
         private Set<String> excludeNamespaces = new LinkedHashSet<>();
         private Set<String> excludeMods = new LinkedHashSet<>();
@@ -183,10 +307,18 @@ public final class ExportConfig {
         private long memoryLimitBytes = 256L * 1024 * 1024;
         private int threads = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
         private boolean includePaths = false;
+        private boolean analyze = true;
+        private boolean analysisSeparate = true;
+        private boolean packagePerKind = true;
         private WikiOptions wiki = WikiOptions.defaults();
 
         public Builder outputDir(Path dir) {
             this.outputDir = dir;
+            return this;
+        }
+
+        public Builder packageName(String name) {
+            this.packageName = name == null || name.isEmpty() ? "uee-export" : name;
             return this;
         }
 
@@ -200,8 +332,11 @@ public final class ExportConfig {
             return this;
         }
 
+        /** Replaces the content categories. An empty array means "every category". */
         public Builder kinds(ElementKind... ks) {
-            this.kinds = ks.length == 0 ? EnumSet.noneOf(ElementKind.class) : EnumSet.copyOf(java.util.Arrays.asList(ks));
+            this.kinds = ks.length == 0
+                    ? EnumSet.noneOf(ElementKind.class)
+                    : EnumSet.copyOf(java.util.Arrays.asList(ks));
             return this;
         }
 
@@ -257,6 +392,21 @@ public final class ExportConfig {
 
         public Builder includePaths(boolean on) {
             this.includePaths = on;
+            return this;
+        }
+
+        public Builder analyze(boolean on) {
+            this.analyze = on;
+            return this;
+        }
+
+        public Builder analysisSeparate(boolean on) {
+            this.analysisSeparate = on;
+            return this;
+        }
+
+        public Builder packagePerKind(boolean on) {
+            this.packagePerKind = on;
             return this;
         }
 

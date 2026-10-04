@@ -391,22 +391,6 @@ public final class SmokeTest {
                     DebugSection.of("counts", "mods", "2", "registries", "4"));
         }
 
-        /**
-         * Runs the diagnostic analysis, so the smoke test exercises the analysis records through
-         * every writer rather than only checking them against an in-memory sink.
-         */
-        @Override
-        public void collectDebugRecords(ExportConfig config, org.uee.spi.ElementSink sink) {
-            org.uee.debug.ModAnalyzer.analyze(new org.uee.debug.ModAnalyzer.Context(
-                    mods(), java.util.Map.of(),
-                    java.util.List.of(org.uee.debug.MixinConfig.parse(
-                            "example.mixins.json", "example",
-                            "{\"package\":\"org.example.mixin\",\"mixins\":[\"FooMixin\"],"
-                                    + "\"server\":[{\"target\":\"net.minecraft.world.level.Level\","
-                                    + "\"mixins\":[\"LevelMixin\"]}]}")),
-                    java.util.Set.of("example", "minecraft", "orphanpack")), sink);
-        }
-
         @Override
         public boolean supports(String capability) {
             return switch (capability) {

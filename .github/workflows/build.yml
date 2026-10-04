@@ -27,8 +27,11 @@ jobs:
       - name: Run the smoke test
         run: ./gradlew smokeTest
 
-      - name: Run the debug analysis test
-        run: ./gradlew debugTest
+      - name: Run the configuration test
+        run: ./gradlew configTest
+
+      - name: Run the analysis test
+        run: ./gradlew analysisTest
 
   # Each loader builds separately because each needs its own patched game jar. `-x test` keeps the
   # core checks in the job above rather than repeating them four times.

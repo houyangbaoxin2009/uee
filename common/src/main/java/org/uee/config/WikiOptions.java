@@ -103,6 +103,21 @@ public final class WikiOptions {
                 .replace("%ext%", ext);
     }
 
+    /** A builder pre-filled with these options, for producing a modified copy. */
+    public Builder toBuilder() {
+        Builder b = new Builder();
+        b.enabled = enabled;
+        b.format = format;
+        b.icons = icons;
+        b.includeEntities = includeEntities;
+        b.includeRecipes = includeRecipes;
+        b.includeBlocksAsSeparateFile = includeBlocksAsSeparateFile;
+        b.itemFileTemplate = itemFileTemplate;
+        b.entityFileTemplate = entityFileTemplate;
+        b.recipeFileTemplate = recipeFileTemplate;
+        return b;
+    }
+
     public static Builder builder() {
         return new Builder();
     }

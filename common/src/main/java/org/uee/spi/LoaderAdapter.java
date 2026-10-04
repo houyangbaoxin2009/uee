@@ -55,16 +55,23 @@ public interface LoaderAdapter {
     List<DebugSection> debugSections();
 
     /**
-     * Diagnostic records that need structure rather than a flat section: mod summaries, the
-     * dependency graph, namespace ownership, mixin configs and the findings derived from them.
+     * Raw facts the analyses read, as opposed to conclusions.
      *
-     * <p>Separate from {@link #debugSections()} because these are records of their own categories and
-     * flow through the normal sharded write path, so an automation consumer can read them as data
-     * rather than parse them out of a text block.
+     * <p>The adapter's job stops at gathering: it reports which containers it found and what mixin
+     * configs those containers declare, and it draws no inferences from them. Deciding that two mods
+     * patching one class is a problem is the analysis module's business, and keeping that split means
+     * a new check never requires touching four loader modules.
      *
-     * <p>Default is empty, so a minimal adapter needs no change to compile.
+     * <p>Both default to empty, so an adapter that cannot locate containers still compiles and still
+     * exports — it simply contributes fewer facts.
      */
-    default void collectDebugRecords(org.uee.config.ExportConfig config, ElementSink sink) {
+    default java.util.Map<String, org.uee.debug.ModContainerScanner.ContainerInfo> containers() {
+        return java.util.Map.of();
+    }
+
+    /** Mixin configs found in the mods' containers, in discovery order. */
+    default List<org.uee.debug.MixinConfig> mixinConfigs() {
+        return List.of();
     }
 
     /**

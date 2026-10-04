@@ -86,24 +86,40 @@ tasks.register('smokeTest', JavaExec) {
 }
 
 /**
- * Runs the diagnostic-layer checks over generated jar fixtures.
+ * Runs the configuration checks.
  *
- * <p>Separate from the smoke test because it covers a different claim: the smoke test proves the
- * pipeline and every writer work, while this proves container scanning, mixin parsing and the
- * dependency/conflict analysis work — the parts that make the debug output worth having.
+ * <p>Covers the td syntax, the comments in a written config, the layering of defaults over file over
+ * command line, and the shared token vocabulary. Configuration is decided before anything touches
+ * Minecraft, so this needs no game either.
  */
-tasks.register('debugTest', JavaExec) {
-    description = 'Runs the container-scan, mixin-parse and conflict-analysis checks.'
+tasks.register('configTest', JavaExec) {
+    description = 'Runs the config-file, layering and vocabulary checks.'
     group = 'verification'
     dependsOn 'verifyHarness'
     classpath = harnessClasspath
-    mainClass = 'org.uee.DebugAnalysisTest'
-    args = [layout.buildDirectory.dir('debug-test').get().asFile.absolutePath]
+    mainClass = 'org.uee.ConfigTest'
+    args = [layout.buildDirectory.dir('config-test').get().asFile.absolutePath]
 }
 
-/** Runs every core check. */
+/**
+ * Runs the analysis checks over generated jar fixtures.
+ *
+ * <p>Separate from the smoke test because it covers a different claim: the smoke test proves the
+ * pipeline and every writer work, while this proves container scanning, mixin parsing, the stage
+ * split and the dependency/namespace/coverage checks work.
+ */
+tasks.register('analysisTest', JavaExec) {
+    description = 'Runs the container-scan, mixin-parse and analysis checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.AnalysisTest'
+    args = [layout.buildDirectory.dir('analysis-test').get().asFile.absolutePath]
+}
+
+/** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
     group = 'verification'
-    dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'debugTest'
+    dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest'
 }

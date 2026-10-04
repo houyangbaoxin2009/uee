@@ -60,6 +60,26 @@ public enum ElementKind {
         this.plural = plural;
     }
 
+    /**
+     * Categories produced by the analysis rather than by a registry walk.
+     *
+     * <p>This is a property of the category, so it lives here rather than being re-listed by every
+     * component that needs to tell the two halves apart. It was previously duplicated in the pipeline
+     * and in the token vocabulary, which is one copy away from the two disagreeing.
+     */
+    public static final java.util.Set<ElementKind> ANALYSIS_KINDS = java.util.EnumSet.of(
+            NAMESPACE, DEPENDENCY, CONFLICT, MIXIN);
+
+    /** Whether this category comes from the analysis rather than from collection. */
+    public boolean isAnalysis() {
+        return ANALYSIS_KINDS.contains(this);
+    }
+
+    /** Whether this category comes from collection. */
+    public boolean isCollected() {
+        return !isAnalysis();
+    }
+
     /** Singular token, used in per-element file names and diagnostic messages. */
     public String singular() {
         return singular;
