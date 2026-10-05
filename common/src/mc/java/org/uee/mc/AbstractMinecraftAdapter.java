@@ -81,19 +81,10 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
      */
     protected abstract Collection<RecipeHolder<?>> recipes();
 
-    /**
-     * Renders an item to a PNG at the requested edge length, or {@code null} when rendering is
-     * unavailable. Only a client can render, and rendering is a separate opt-in phase precisely so
-     * the data path never depends on it.
-     */
-    protected byte[] renderItemIcon(ItemStack stack, int size) {
-        return null;
-    }
-
-    /** Renders a mob to a PNG, or {@code null} when rendering is unavailable. */
-    protected byte[] renderEntityIcon(EntityType<?> type, int size) {
-        return null;
-    }
+    // The two render hooks that used to live here are gone. They returned null and were called from the
+    // collection path, which meant an export with icons on would have rendered in the middle of a
+    // streaming pass -- the one thing the data phase is defined not to do. Rendering now belongs to
+    // IconRenderer, which is reached only from the icon phase.
 
     // ---------------------------------------------------------------- shared surface
 
