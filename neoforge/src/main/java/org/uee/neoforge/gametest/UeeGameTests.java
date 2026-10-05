@@ -118,6 +118,39 @@ public final class UeeGameTests {
         helper.succeed();
     }
 
+    /**
+     * Tags are collected from the loaded datapacks.
+     *
+     * <p>The one thing the core tests cannot cover: everything about a tag file's <em>shape</em> is
+     * verified without a game, but reading them out of the resource system is not. That path involves a
+     * resource stack, a merge across packs and a resource path convention, so it is exactly the part
+     * that needs a real pack loaded — and the vanilla datapacks provide thousands of tags, which makes
+     * it a real workload rather than a token one.
+     */
+    @GameTest(template = "empty", timeoutTicks = 600)
+    public static void tagsAreCollectedFromDatapacks(GameTestHelper helper) {
+        LoaderAdapter adapter = Uee.adapter();
+        RecordingSink sink = new RecordingSink();
+        ExportConfig config = ExportConfig.builder().kinds(ElementKind.TAG).build();
+        adapter.collectDatapacks(config, EnumSet.of(ElementKind.TAG), sink);
+
+        helper.assertTrue(sink.generics.size() > 0,
+                "no tags were collected; the resource stack, the path convention or the datapack"
+                        + " enumeration is wrong");
+        helper.assertTrue(sink.failures.isEmpty(),
+                "tag collection reported failures, first: "
+                        + (sink.failures.isEmpty() ? "" : sink.failures.get(0)));
+
+        // A tag known to exist in the vanilla data, so a collection that produced something but not
+        // the right something is caught as well as one that produced nothing.
+        boolean foundAPlank = sink.generics.stream()
+                .anyMatch(g -> g.startsWith("tag:") && g.contains("planks"));
+        helper.assertTrue(foundAPlank,
+                "the vanilla planks tags are missing from a run over the vanilla datapacks");
+
+        helper.succeed();
+    }
+
     /** The mod list contains this mod and the game itself, with dependencies parsed. */
     @GameTest(template = "empty", timeoutTicks = 200)
     public static void modListIsAvailable(GameTestHelper helper) {

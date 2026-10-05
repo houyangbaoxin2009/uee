@@ -64,6 +64,9 @@ public final class Tokens {
             ElementKind.BLOCK,
             ElementKind.ENTITY,
             ElementKind.RECIPE,
+            // Tags describe how everything above is grouped, which is exactly what a wiki page
+            // cites when it says "this item is a gem". A member of the dominant purpose, so it is in.
+            ElementKind.TAG,
             ElementKind.EFFECT,
             ElementKind.FLUID,
             ElementKind.ENCHANTMENT,

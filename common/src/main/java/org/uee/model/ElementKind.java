@@ -17,6 +17,14 @@ public enum ElementKind {
     BLOCK("block", "blocks"),
     /** Recipes — the {@code R} category. */
     RECIPE("recipe", "recipes"),
+    /**
+     * Tags — the named member sets a pack declares under {@code data/<ns>/tags/}.
+     *
+     * <p>Collected content rather than a registry: a tag is not registered, it is declared in data, and
+     * the same id can exist as an item tag and a block tag at once. It belongs in this half because it
+     * is read from the same places as recipes and is filtered by the same rules.
+     */
+    TAG("tag", "tags"),
     /** Status effects (potion effects). */
     EFFECT("effect", "effects"),
     /** Fluids. */

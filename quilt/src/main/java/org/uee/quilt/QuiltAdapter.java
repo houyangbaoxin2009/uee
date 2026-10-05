@@ -10,9 +10,7 @@ import org.quiltmc.loader.api.ModContainer;
 import org.quiltmc.loader.api.ModMetadata;
 import org.quiltmc.loader.api.QuiltLoader;
 import org.uee.mc.AbstractMinecraftAdapter;
-import org.uee.mc.ResourceManagerTranslator;
 import org.uee.debug.ModDescriptorReader;
-import org.uee.mc.Translator;
 import org.uee.model.Dependency;
 import org.uee.model.ModElement;
 
@@ -24,15 +22,7 @@ import org.uee.model.ModElement;
  * that Quilt runs for compatibility.
  */
 public final class QuiltAdapter extends AbstractMinecraftAdapter {
-
-    private volatile ResourceManager resources;
     private volatile Collection<RecipeHolder<?>> recipes = List.of();
-    private volatile Translator translator;
-
-    public void bindResources(ResourceManager resourceManager) {
-        this.resources = resourceManager;
-        this.translator = null;
-    }
 
     public void bindRecipes(Collection<RecipeHolder<?>> current) {
         this.recipes = current == null ? List.of() : current;
@@ -73,17 +63,6 @@ public final class QuiltAdapter extends AbstractMinecraftAdapter {
     protected boolean isClient() {
         return net.fabricmc.loader.api.FabricLoader.getInstance().getEnvironmentType()
                 == net.fabricmc.api.EnvType.CLIENT;
-    }
-
-    @Override
-    protected Translator translator() {
-        Translator current = translator;
-        if (current == null) {
-            ResourceManager manager = resources;
-            current = manager == null ? Translator.none() : new ResourceManagerTranslator(manager);
-            translator = current;
-        }
-        return current;
     }
 
     /** Builds the mod list, reading dependencies from {@code quilt.mod.json} rather than the API. */

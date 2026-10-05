@@ -203,10 +203,27 @@ tasks.register('scaleTest', JavaExec) {
     args = [layout.buildDirectory.dir('scale-test').get().asFile.absolutePath]
 }
 
+/**
+ * Runs the tag-collection checks.
+ *
+ * <p>Tags are the first datapack-backed category, and the risky part is the shape handling rather than
+ * the collection: three entry forms, a replace flag, and a merge across packs whose direction is
+ * counter-intuitive. None of that needs a game, which is why the parsing lives in the core.
+ */
+tasks.register('tagTest', JavaExec) {
+    description = 'Runs the tag parsing, merge and record checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.TagTest'
+    args = [layout.buildDirectory.dir('tag-test').get().asFile.absolutePath]
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
     group = 'verification'
     dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest',
-            'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest', 'scaleTest'
+            'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest', 'scaleTest',
+            'tagTest'
 }

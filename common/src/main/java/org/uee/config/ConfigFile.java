@@ -718,6 +718,15 @@ public final class ConfigFile {
                 // Dry run: write nothing, but report the real file set and record counts
                 dry_run = false
 
+                // 关于 tags 类目 / about the tags category:
+                //   记录 data/<命名空间>/tags/<类型>/<路径>.json 中「声明」的成员，含以井号开头的
+                //   嵌套标签；嵌套标签只记录不展开（展开要解析注册表并检测环，且会把「包写了什么」
+                //   换成「算出来什么」）。
+                //   多包同名标签的合并遵循原版 TagLoader：按包优先级叠加，某包声明 replace 时清空其下。
+                //   Members are recorded as declared, nested tags included but not expanded, and merged
+                //   the way vanilla's TagLoader does: stacked by pack priority, where a pack's replace
+                //   flag discards everything below it.
+
                 // ─── 采集 / collection ─────────────────────────────────────────────
                 icons = false                   // 图标渲染，较慢 / render icons, slow
                 pretty = false                  // 美化缩进，仅 json / pretty-print, json only

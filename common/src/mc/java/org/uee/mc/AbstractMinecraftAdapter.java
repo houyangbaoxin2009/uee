@@ -26,6 +26,7 @@ import net.minecraft.world.item.crafting.ShapedRecipe;
 import net.minecraft.world.item.crafting.ShapelessRecipe;
 import net.minecraft.world.level.block.Block;
 import org.uee.config.ExportConfig;
+import org.uee.datapack.TagFile;
 import org.uee.datapack.FunctionFlow;
 import org.uee.debug.MixinConfig;
 import org.uee.debug.ModContainerScanner;
@@ -69,8 +70,6 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
     protected abstract String gameDirectory();
 
     protected abstract boolean isClient();
-
-    protected abstract Translator translator();
 
     protected abstract List<ModElement> loadedMods();
 
@@ -210,6 +209,26 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         return List.of();
     }
 
+    /**
+     * The resource manager for the current server or client, bound once loading finishes.
+     *
+     * <p>Held here rather than in each loader because all four need exactly this and nothing
+     * loader-specific about it: the concrete adapters had four copies of the field, and three of them
+     * also had four copies of the setter. Any datapack-backed collection — tags today, loot tables and
+     * functions later — needs to read resources, so the shared layer is where the handle belongs.
+     */
+    private volatile net.minecraft.server.packs.resources.ResourceManager resources;
+
+    /**
+     * Language tables, built on first use and dropped when resources are rebound.
+     *
+     * <p>Held here for the same reason as the resource manager: all four adapters had an identical
+     * copy of the field, of the lazy initialiser and of the invalidation. Four copies of a three-part
+     * invariant is four chances for one of them to be missing a part, which is exactly what had
+     * happened — one adapter did not invalidate.
+     */
+    private volatile Translator translator;
+
     /** Container inspections, filled on first use. */
     private final Map<String, ModContainerScanner.ContainerInfo> containers = new HashMap<>();
     /** Mixin configs read from those containers, filled on first use. */
@@ -221,6 +240,9 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
             ElementSink sink) {
         if (wanted.contains(ElementKind.RECIPE)) {
             collectRecipes(config, sink);
+        }
+        if (wanted.contains(ElementKind.TAG)) {
+            collectTags(config, sink);
         }
     }
 
@@ -427,6 +449,158 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
                 sink.failure(ElementKind.BIOME, id.toString(), t);
             }
         }
+    }
+
+    /**
+     * Binds the resource manager, discarding anything derived from the previous one.
+     *
+     * <p>The translator is dropped rather than kept because a resource reload can change language
+     * files, and a cached table would then serve names from the pack that was loaded before — silently,
+     * since nothing about a stale translation looks wrong. One of the four adapters did not do this,
+     * which is the kind of divergence that copies produce; having one implementation removes the
+     * possibility.
+     */
+    public void bindResources(net.minecraft.server.packs.resources.ResourceManager resourceManager) {
+        this.resources = resourceManager;
+        this.translator = null;
+    }
+
+    /**
+     * The bound resource manager, or {@code null} if loading has not reached that point yet.
+     *
+     * <p>Null is a real state — a collection attempted before resources exist should report that it
+     * found nothing rather than throw — so callers check rather than assume.
+     */
+    protected net.minecraft.server.packs.resources.ResourceManager resources() {
+        return resources;
+    }
+
+    /**
+     * The translator for the bound resources, built on first use.
+     *
+     * <p>With no resources bound it answers with the empty translator rather than null: every caller
+     * wants a name for a key, and "no translation available" is a usable answer while a null check at
+     * every call site is not. Building the tables reads every namespace's language files, so it is
+     * deferred until something actually asks for a name — a run that collects no translated fields
+     * never pays for it.
+     */
+    protected Translator translator() {
+        Translator current = translator;
+        if (current == null) {
+            net.minecraft.server.packs.resources.ResourceManager manager = resources;
+            current = manager == null ? Translator.none() : new ResourceManagerTranslator(manager);
+            translator = current;
+        }
+        return current;
+    }
+
+    // ---------------------------------------------------------------- tags
+
+    /**
+     * Collects the tags packs declare under {@code data/<ns>/tags/<type>/<path>.json}.
+     *
+     * <h2>Why the stacks, and not just the winning file</h2>
+     *
+     * <p>A tag is the result of merging every pack's version of the same file, so reading only the
+     * highest-priority one would produce a tag that looks complete and is missing entries — the worst
+     * kind of wrong, since nothing about it appears broken.
+     *
+     * <p>The merge rule here is read from vanilla's own {@code TagLoader} rather than inferred: walk the
+     * stack in order, parse each file, and if a file sets {@code replace} clear what has accumulated
+     * before appending its entries. A pack that declares {@code replace} therefore discards everything
+     * below it, which is what a pack overriding a tag intends.
+     *
+     * <h2>What is recorded</h2>
+     *
+     * <p>The declared members, including nested tags written with a leading {@code #}. Nested tags are
+     * <em>not</em> expanded: expansion needs the registry to resolve ids and cycle detection to
+     * terminate, and it would replace what a pack wrote with a derived set. A wiki wants the former —
+     * "this tag includes that tag" is information, and a reader following it can look up the other tag.
+     * The record marks which members are nested so a consumer can tell the two apart.
+     */
+    private void collectTags(ExportConfig config, ElementSink sink) {
+        net.minecraft.server.packs.resources.ResourceManager manager = resources;
+        if (manager == null) {
+            // No resources bound yet. Reported as nothing found rather than as a failure: a run before
+            // the resource load simply has no datapack content to offer.
+            return;
+        }
+        Map<ResourceLocation, List<net.minecraft.server.packs.resources.Resource>> stacks;
+        try {
+            stacks = manager.listResourceStacks("tags", path -> path.getPath().endsWith(".json"));
+        } catch (Throwable t) {
+            sink.failure(ElementKind.TAG, "tags", t);
+            return;
+        }
+
+        for (Map.Entry<ResourceLocation, List<net.minecraft.server.packs.resources.Resource>>
+                entry : stacks.entrySet()) {
+            ResourceLocation file = entry.getKey();
+            String type = TagFile.typeOf(file.getPath());
+            String path = TagFile.pathOf(file.getPath());
+            if (type == null || path == null || !config.acceptsNamespace(file.getNamespace())) {
+                continue;
+            }
+            try {
+                TagFile merged = mergeTag(entry.getValue());
+                if (merged == null) {
+                    // Every file in the stack was unreadable; TagFile reports each one, so there is
+                    // nothing to add here.
+                    continue;
+                }
+                sink.generic(ElementKind.TAG, file.getNamespace(), path,
+                        null, null, merged.membersAsWritten(),
+                        new String[] {
+                                // `type` is recorded because it is not implied by the id: c:gems exists
+                                // as an item tag and as a block tag in different packs, and merging
+                                // those two would merge two different sets.
+                                "type", type,
+                                "replace", Boolean.toString(merged.replace()),
+                                "count", Integer.toString(merged.entries().size()),
+                                "nested", Integer.toString(merged.nestedCount()),
+                                "optional", Integer.toString(merged.optionalCount())});
+            } catch (Throwable t) {
+                sink.failure(ElementKind.TAG, file.toString(), t);
+            }
+        }
+    }
+
+    /** Merges one tag file's stack, in the order given, applying each file's {@code replace}. */
+    private TagFile mergeTag(List<net.minecraft.server.packs.resources.Resource> stack) {
+        List<TagFile.Entry> merged = new ArrayList<>(16);
+        boolean sawReplace = false;
+        for (net.minecraft.server.packs.resources.Resource resource : stack) {
+            TagFile file;
+            try (java.io.BufferedReader reader = resource.openAsReader()) {
+                file = TagFile.parse(readAll(reader));
+            } catch (Throwable t) {
+                // One unreadable file in the stack must not lose the others: the packs below still
+                // contribute, which is the same rule the rest of collection follows.
+                org.uee.Uee.reportFailure("tag file from pack '" + resource.sourcePackId()
+                        + "' could not be read", t);
+                continue;
+            }
+            if (file.replace()) {
+                merged.clear();
+                sawReplace = true;
+            }
+            merged.addAll(file.entries());
+        }
+        if (merged.isEmpty() && !sawReplace) {
+            return null;
+        }
+        return TagFile.of(sawReplace, merged);
+    }
+
+    /** Reads a reader to its end. Small helper so the try-with-resources above stays readable. */
+    private static String readAll(java.io.Reader reader) throws java.io.IOException {
+        StringBuilder sb = new StringBuilder(4096);
+        char[] buf = new char[4096];
+        int n;
+        while ((n = reader.read(buf)) > 0) {
+            sb.append(buf, 0, n);
+        }
+        return sb.toString();
     }
 
     // ---------------------------------------------------------------- recipes

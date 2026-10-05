@@ -202,12 +202,20 @@ and no more for the dominant purpose**:
 | 方面 / Aspect | 默认 / Default | 为什么 / Why |
 | --- | --- | --- |
 | 格式 / format | `json` | 通用可读，无需解释 / readable anywhere |
-| 类目 / categories | 9 个：mods items blocks entities recipes effects fluids enchantments creative_tabs | 百科页要引用的注册表全在里面，跑一次就够 / everything a wiki entry references |
+| 类目 / categories | 10 个：mods items blocks entities recipes **tags** effects fluids enchantments creative_tabs | 百科页要引用的注册表与分组全在里面，跑一次就够 / everything a wiki entry references |
 | 分析 / analysis | 开，**独立成包** | n 个数据包 + **1 个**分析包；数据那半可单独交给下游 / n data packages plus one analysis bundle |
 | 不导 / left out | biomes dimensions structures sounds particles attributes damage_types | 大、少改、物品页用不到；一个词可加回 / large, rarely changed, one token away |
 
 ★ **默认类目是纯数据类目**：它不跨"搜集/分析"的分界，所以 `kinds = ["common"]` 只有一种含义——
 否则和 `analyze = false` 一起写时会变得含混。
+
+★ **`tags` 记「声明」而非「展开」**：记录 `data/<ns>/tags/<type>/<path>.json` 里写的成员（含嵌套标签），
+**不展开**嵌套——展开要解析注册表并检测环，而且会把"包写了什么"替换成"算出来什么"。
+多包同名标签按**原版 `TagLoader` 的规则**合并：按包优先级叠加，**某包声明 `replace` 则清空其下所有**。
+
+★ **`tags` records what a pack declares, not the expanded set.** Expansion needs the registry and cycle
+detection, and it would replace "what the pack wrote" with "what we computed". Same-named tags merge the
+way vanilla does: stacked by pack priority, where a pack's `replace` discards everything below it.
 
 ★ **The default category set is pure collected content** — it does not straddle the
 collection/analysis boundary, so `kinds = ["common"]` means one thing even beside `analyze = false`.
