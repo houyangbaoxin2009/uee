@@ -167,10 +167,27 @@ tasks.register('defaultsTest', JavaExec) {
     args = [layout.buildDirectory.dir('defaults-test').get().asFile.absolutePath]
 }
 
+/**
+ * Runs the command-surface checks.
+ *
+ * <p>The command vocabulary used to be the one part of the system with no coverage at all, because
+ * the parsing lived in the class that also sends replies and that class cannot load without
+ * Brigadier. The logic now sits in a class with no Minecraft dependency, so every token, every
+ * refusal and every session override is verifiable without a game.
+ */
+tasks.register('commandSurfaceTest', JavaExec) {
+    description = 'Runs the command-vocabulary and session-layer checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.CommandSurfaceTest'
+    args = [layout.buildDirectory.dir('command-surface-test').get().asFile.absolutePath]
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
     group = 'verification'
     dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest',
-            'datapackTest', 'functionTest', 'defaultsTest'
+            'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest'
 }

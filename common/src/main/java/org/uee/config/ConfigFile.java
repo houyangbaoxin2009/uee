@@ -164,6 +164,17 @@ public final class ConfigFile {
         return flow;
     }
 
+    /**
+     * Every key this build understands.
+     *
+     * <p>Exposed so a caller can check that what it produces is readable — the command surface uses it
+     * to assert that every setting it can make is also one a config file can express, which is what
+     * keeps the two interfaces the same interface.
+     */
+    public static java.util.Set<String> knownKeys() {
+        return java.util.Set.of(KNOWN_KEYS);
+    }
+
     /** Keys found in the file that this build does not understand. */
     public List<String> unknownKeys() {
         return unknownKeys;
@@ -1089,6 +1100,49 @@ public final class ConfigFile {
 
         public Builder maxFileMb(int mb) {
             this.maxFileMb = mb;
+            return this;
+        }
+
+        /**
+         * The remaining keys, which the parser could set but no caller could.
+         *
+         * <p>The parse path assigns these fields directly, being inside the same class — so they
+         * worked from a file and were unreachable from code. That was invisible until the command
+         * surface tried to build a layer for {@code /uee set shards} and found there was no setter
+         * for it, which is a gap worth closing rather than working around.
+         */
+        public Builder shardSize(int records) {
+            this.shardSize = records;
+            return this;
+        }
+
+        public Builder shardByNamespace(boolean on) {
+            this.shardByNamespace = on;
+            return this;
+        }
+
+        public Builder memoryLimitMb(int mb) {
+            this.memoryLimitMb = mb;
+            return this;
+        }
+
+        public Builder threads(int n) {
+            this.threads = n;
+            return this;
+        }
+
+        public Builder pretty(boolean on) {
+            this.pretty = on;
+            return this;
+        }
+
+        public Builder incremental(boolean on) {
+            this.incremental = on;
+            return this;
+        }
+
+        public Builder packagePerKind(boolean on) {
+            this.packagePerKind = on;
             return this;
         }
 

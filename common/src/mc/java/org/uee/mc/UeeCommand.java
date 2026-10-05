@@ -19,6 +19,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import org.uee.Uee;
 import org.uee.analysis.Finding;
+import org.uee.config.CommandSurface;
 import org.uee.config.ConfigFile;
 import org.uee.config.ConfigResolver;
 import org.uee.config.ExportConfig;
@@ -159,62 +160,73 @@ public final class UeeCommand {
                 .then(Commands.literal("set")
                         .then(Commands.literal("fields")
                                 .then(Commands.argument("names", StringArgumentType.greedyString())
-                                        .executes(ctx -> setFields(ctx.getSource(),
-                                                arg(ctx, "names")))))
+                                        .executes(ctx -> applySetting(ctx.getSource(),
+                                                () -> SURFACE.setFields(arg(ctx, "names"), false)))))
                         .then(Commands.literal("exclude-fields")
                                 .then(Commands.argument("names", StringArgumentType.greedyString())
-                                        .executes(ctx -> setExcludeFields(ctx.getSource(),
-                                                arg(ctx, "names")))))
+                                        .executes(ctx -> applySetting(ctx.getSource(),
+                                                () -> SURFACE.setFields(arg(ctx, "names"), true)))))
                         .then(Commands.literal("tags")
                                 .then(Commands.argument("tags", StringArgumentType.greedyString())
-                                        .executes(ctx -> setTags(ctx.getSource(),
-                                                arg(ctx, "tags"), false))))
+                                        .executes(ctx -> applySetting(ctx.getSource(),
+                                                () -> SURFACE.setTags(arg(ctx, "tags"), false)))))
                         .then(Commands.literal("skip-tags")
                                 .then(Commands.argument("tags", StringArgumentType.greedyString())
-                                        .executes(ctx -> setTags(ctx.getSource(),
-                                                arg(ctx, "tags"), true))))
+                                        .executes(ctx -> applySetting(ctx.getSource(),
+                                                () -> SURFACE.setTags(arg(ctx, "tags"), true)))))
                         .then(Commands.literal("namespaces")
                                 .then(Commands.argument("namespaces",
                                                 StringArgumentType.greedyString())
-                                        .executes(ctx -> setNamespaces(ctx.getSource(),
-                                                arg(ctx, "namespaces"), false))))
+                                        .executes(ctx -> applySetting(ctx.getSource(),
+                                                () -> SURFACE.setNamespaces(
+                                                        arg(ctx, "namespaces"), false)))))
                         .then(Commands.literal("skip-namespaces")
                                 .then(Commands.argument("namespaces",
                                                 StringArgumentType.greedyString())
-                                        .executes(ctx -> setNamespaces(ctx.getSource(),
-                                                arg(ctx, "namespaces"), true))))
+                                        .executes(ctx -> applySetting(ctx.getSource(),
+                                                () -> SURFACE.setNamespaces(
+                                                        arg(ctx, "namespaces"), true)))))
                         .then(Commands.literal("skip-mods")
                                 .then(Commands.argument("mods", StringArgumentType.greedyString())
-                                        .executes(ctx -> setSkipMods(ctx.getSource(),
-                                                arg(ctx, "mods")))))
+                                        .executes(ctx -> applySetting(ctx.getSource(),
+                                                () -> SURFACE.setSkipMods(arg(ctx, "mods"))))))
                         .then(Commands.literal("shards")
                                 .then(Commands.argument("records",
                                                 com.mojang.brigadier.arguments.IntegerArgumentType
                                                         .integer(1))
-                                        .executes(ctx -> setShards(ctx.getSource(),
-                                                com.mojang.brigadier.arguments.IntegerArgumentType
-                                                        .getInteger(ctx, "records")))))
+                                        .executes(ctx -> applySetting(ctx.getSource(),
+                                                () -> SURFACE.setShards(
+                                                        com.mojang.brigadier.arguments
+                                                                .IntegerArgumentType
+                                                                .getInteger(ctx, "records")))))
                         .then(Commands.literal("max-file-mb")
                                 .then(Commands.argument("mb",
                                                 com.mojang.brigadier.arguments.IntegerArgumentType
                                                         .integer(0))
-                                        .executes(ctx -> setMaxFile(ctx.getSource(),
-                                                com.mojang.brigadier.arguments.IntegerArgumentType
-                                                        .getInteger(ctx, "mb")))))
+                                        .executes(ctx -> applySetting(ctx.getSource(),
+                                                () -> SURFACE.setMaxFileMb(
+                                                        com.mojang.brigadier.arguments
+                                                                .IntegerArgumentType
+                                                                .getInteger(ctx, "mb")))))
                         .then(Commands.literal("output")
                                 .then(Commands.argument("dir", StringArgumentType.greedyString())
-                                        .executes(ctx -> setOutput(ctx.getSource(),
-                                                arg(ctx, "dir")))))
+                                        .executes(ctx -> applySetting(ctx.getSource(),
+                                                () -> SURFACE.setOutput(arg(ctx, "dir"))))))
                         .then(Commands.literal("quiet")
-                                .executes(ctx -> setFlag(ctx.getSource(), "quiet", true)))
+                                .executes(ctx -> applySetting(ctx.getSource(),
+                                        () -> SURFACE.setFlag("quiet", true))))
                         .then(Commands.literal("noisy")
-                                .executes(ctx -> setFlag(ctx.getSource(), "quiet", false)))
+                                .executes(ctx -> applySetting(ctx.getSource(),
+                                        () -> SURFACE.setFlag("quiet", false))))
                         .then(Commands.literal("dry-run")
-                                .executes(ctx -> setFlag(ctx.getSource(), "dry_run", true)))
+                                .executes(ctx -> applySetting(ctx.getSource(),
+                                        () -> SURFACE.setFlag("dry_run", true))))
                         .then(Commands.literal("icons")
-                                .executes(ctx -> setFlag(ctx.getSource(), "icons", true)))
+                                .executes(ctx -> applySetting(ctx.getSource(),
+                                        () -> SURFACE.setFlag("icons", true))))
                         .then(Commands.literal("no-icons")
-                                .executes(ctx -> setFlag(ctx.getSource(), "icons", false)))
+                                .executes(ctx -> applySetting(ctx.getSource(),
+                                        () -> SURFACE.setFlag("icons", false))))
                         // The list of what can be set, so the long form is discoverable without the
                         // documentation.
                         .executes(ctx -> listSettables(ctx.getSource())))
@@ -274,17 +286,14 @@ public final class UeeCommand {
                         .then(Commands.literal("reload").executes(ctx -> configReload(ctx.getSource()))));
     }
 
-    /** Builds an override description from a category token list alone, for the async verb. */
+    /**
+     * Builds an override description from a category token list alone.
+     *
+     * <p>Delegates to the surface, which is where the vocabulary and its error messages live so they
+     * are identical here and in a config file, and verifiable without a game.
+     */
     private static ConfigFile kindsOnly(String kindsArg) {
-        if (kindsArg == null || kindsArg.isBlank()) {
-            return ConfigFile.empty();
-        }
-        java.util.Set<ElementKind> kinds = Tokens.kinds(split(kindsArg));
-        if (kinds == null) {
-            throw new IllegalArgumentException("unknown category in '" + kindsArg
-                    + "'; see /uee kinds");
-        }
-        return ConfigFile.builder().kinds(kinds).build();
+        return CommandSurface.kinds(kindsArg);
     }
 
     private static String arg(CommandContext<CommandSourceStack> ctx, String name) {
@@ -325,7 +334,7 @@ public final class UeeCommand {
     private static int runWith(CommandSourceStack source, ConfigFile overrides) {
         ConfigResolver.Resolved resolved;
         try {
-            resolved = Uee.resolveForRun(sessionLayers(), overrides);
+            resolved = Uee.resolveForRun(SURFACE.layers(), overrides);
         } catch (IllegalStateException e) {
             source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
             return 0;
@@ -394,7 +403,7 @@ public final class UeeCommand {
     private static int runAsync(CommandSourceStack source, ConfigFile overrides) {
         ConfigResolver.Resolved resolved;
         try {
-            resolved = Uee.resolveForRun(sessionLayers(), overrides);
+            resolved = Uee.resolveForRun(SURFACE.layers(), overrides);
         } catch (IllegalStateException | IOException e) {
             source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
             return 0;
@@ -437,12 +446,7 @@ public final class UeeCommand {
 
     /** Builds the override description for a formats-only invocation. */
     private static ConfigFile formatsOnly(String formatsArg) {
-        java.util.Set<String> formats = Tokens.formats(split(formatsArg));
-        if (formats == null) {
-            throw new IllegalArgumentException("unknown format in '" + formatsArg
-                    + "'; see /uee formats");
-        }
-        return ConfigFile.builder().formats(formats).build();
+        return CommandSurface.formats(formatsArg);
     }
 
     private static int runAsyncWithFormats(CommandSourceStack source, String formatsArg) {
@@ -587,40 +591,7 @@ public final class UeeCommand {
      * @return the description, or an empty one when nothing was typed
      */
     static ConfigFile overridesOf(String kindsArg, String formatsArg) {
-        ConfigFile.Builder b = ConfigFile.builder();
-        boolean anything = false;
-
-        if (kindsArg != null && !kindsArg.isBlank()) {
-            List<String> tokens = split(kindsArg);
-            Set<ElementKind> kinds = Tokens.kinds(tokens);
-            if (kinds == null) {
-                throw new IllegalArgumentException(
-                        "unknown category in '" + kindsArg + "'; see /uee kinds");
-            }
-            b.kinds(kinds);
-            anything = true;
-        }
-        if (formatsArg != null && !formatsArg.isBlank()) {
-            List<String> tokens = split(formatsArg);
-            Set<String> formats = Tokens.formats(tokens);
-            if (formats == null) {
-                throw new IllegalArgumentException(
-                        "unknown format in '" + formatsArg + "'; see /uee formats");
-            }
-            b.formats(formats);
-            anything = true;
-        }
-        return anything ? b.build() : ConfigFile.empty();
-    }
-
-    private static List<String> split(String arg) {
-        List<String> out = new ArrayList<>(4);
-        for (String piece : arg.split("[,\\s]+")) {
-            if (!piece.isBlank()) {
-                out.add(piece.trim().toLowerCase(Locale.ROOT));
-            }
-        }
-        return out;
+        return CommandSurface.kindsAndFormats(kindsArg, formatsArg);
     }
 
     // ---------------------------------------------------------------- other verbs
@@ -733,179 +704,31 @@ public final class UeeCommand {
     // ---------------------------------------------------------------- the long form
 
     /**
-     * Settings made this session, each as its own partial description, in the order they were made.
+     * The command surface's logic, with no dependency on the game.
      *
-     * <p>A stack rather than one merged description. Each {@code /uee set …} contributes a layer, and
-     * the resolver already knows how to apply a stack — so a session setting is not a special case in
-     * the resolution path, it is just one more layer. Merging them here would be a second
-     * implementation of layering, and the two would drift.
-     *
-     * <p>Held in memory rather than written to the config file, so experimenting does not quietly
-     * become permanent. {@code /uee config save} is how a setting that turned out to be right gets
-     * written down — an explicit step, because a command that silently edited the config would make
-     * "what am I actually running" unanswerable.
+     * <p>Held here only so the command tree can reach it; everything it does is verifiable without a
+     * game, which is the point of it living outside this class.
      */
-    private static final java.util.List<ConfigFile> SESSION = new java.util.ArrayList<>(8);
-    private static final java.util.List<String> SESSION_LOG = new java.util.ArrayList<>(8);
-
-    private static void remember(String what, ConfigFile layer) {
-        SESSION.add(layer);
-        SESSION_LOG.add(what);
-    }
+    private static final CommandSurface SURFACE = new CommandSurface();
 
     /**
-     * The layers this session has accumulated.
+     * Applies a setting and reports it, or reports why it was refused.
      *
-     * <p>Ordered oldest first, so a later setting overrides an earlier one — which is what someone
-     * typing one {@code set} after another expects.
+     * <p>The one place the command layer touches the surface's outcome, so every verb reports the same
+     * way — and so the wording lives in the surface where it can be tested, rather than being spelled
+     * out again in each branch here.
      */
-    static java.util.List<ConfigFile> sessionLayers() {
-        return java.util.List.copyOf(SESSION);
-    }
-
-    private static int setFields(CommandSourceStack source, String names) {
-        java.util.Set<String> fields = splitToSet(names);
-        if (fields.isEmpty()) {
-            source.sendFailure(Component.literal(Uee.NAME + ": /uee set fields <name> <name> …"));
+    private static int applySetting(CommandSourceStack source,
+            java.util.function.Supplier<CommandSurface.Setting> work) {
+        try {
+            CommandSurface.Setting setting = work.get();
+            report(source, setting.description());
+            return setting.count();
+        } catch (IllegalArgumentException e) {
+            // The surface's messages are already phrased for a user and already say how to fix it.
+            source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
             return 0;
         }
-        remember("fields " + String.join(",", fields),
-                ConfigFile.builder().includeFields(fields).build());
-        report(source, "only these fields: " + String.join(", ", fields)
-                + " (identity fields are always kept)");
-        return fields.size();
-    }
-
-    private static int setExcludeFields(CommandSourceStack source, String names) {
-        java.util.Set<String> fields = splitToSet(names);
-        if (fields.isEmpty()) {
-            source.sendFailure(Component.literal(Uee.NAME
-                    + ": /uee set exclude-fields <name> <name> …"));
-            return 0;
-        }
-        remember("exclude fields " + String.join(",", fields),
-                ConfigFile.builder().excludeFields(fields).build());
-        report(source, "dropping these fields: " + String.join(", ", fields));
-        return fields.size();
-    }
-
-    private static int setTags(CommandSourceStack source, String tags, boolean exclude) {
-        java.util.Set<String> set = splitToSet(tags);
-        if (set.isEmpty()) {
-            source.sendFailure(Component.literal(Uee.NAME
-                    + ": /uee set tags <tag> … or /uee set skip-tags <tag> …"));
-            return 0;
-        }
-        if (exclude) {
-            remember("skip tags " + String.join(",", set),
-                    ConfigFile.builder().excludeTags(set).build());
-            report(source, "skipping elements tagged " + String.join(", ", set));
-        } else {
-            remember("tags " + String.join(",", set),
-                    ConfigFile.builder().includeTags(set).build());
-            report(source, "only elements tagged " + String.join(", ", set)
-                    + " (untagged elements are excluded)");
-        }
-        return set.size();
-    }
-
-    private static int setNamespaces(CommandSourceStack source, String namespaces, boolean exclude) {
-        java.util.Set<String> set = splitToSet(namespaces);
-        if (set.isEmpty()) {
-            source.sendFailure(Component.literal(Uee.NAME
-                    + ": /uee set namespaces <ns> … or /uee set skip-namespaces <ns> …"));
-            return 0;
-        }
-        ConfigFile.Builder b = ConfigFile.builder();
-        if (exclude) {
-            for (String ns : set) {
-                b.excludeNamespace(ns);
-            }
-            remember("skip namespaces " + String.join(",", set), b.build());
-            report(source, "skipping namespaces " + String.join(", ", set));
-        } else {
-            for (String ns : set) {
-                b.includeNamespace(ns);
-            }
-            remember("namespaces " + String.join(",", set), b.build());
-            report(source, "only namespaces " + String.join(", ", set));
-        }
-        return set.size();
-    }
-
-    private static int setSkipMods(CommandSourceStack source, String mods) {
-        java.util.Set<String> set = splitToSet(mods);
-        if (set.isEmpty()) {
-            source.sendFailure(Component.literal(Uee.NAME + ": /uee set skip-mods <mod> …"));
-            return 0;
-        }
-        ConfigFile.Builder b = ConfigFile.builder();
-        for (String id : set) {
-            b.excludeMod(id);
-        }
-        remember("skip mods " + String.join(",", set), b.build());
-        report(source, "skipping mods " + String.join(", ", set));
-        return set.size();
-    }
-
-    private static int setShards(CommandSourceStack source, int records) {
-        remember("shard size " + records, ConfigFile.builder().shardSize(records).build());
-        report(source, "shard size: " + records + " records");
-        return records;
-    }
-
-    private static int setMaxFile(CommandSourceStack source, int mb) {
-        remember("max file " + mb + "MiB", ConfigFile.builder().maxFileMb(mb).build());
-        report(source, mb == 0
-                ? "no byte-based file limit; shards split by record count"
-                : "shards split at about " + mb + " MiB (a whole record may overshoot)");
-        return mb;
-    }
-
-    private static int setOutput(CommandSourceStack source, String dir) {
-        if (dir == null || dir.isBlank()) {
-            source.sendFailure(Component.literal(Uee.NAME + ": /uee set output <dir>"));
-            return 0;
-        }
-        remember("output " + dir, ConfigFile.builder().output(Path.of(dir)).build());
-        report(source, "output directory: " + dir);
-        return 1;
-    }
-
-    /** Handles the boolean toggles, which all have the same shape. */
-    private static int setFlag(CommandSourceStack source, String key, boolean value) {
-        ConfigFile.Builder b = ConfigFile.builder();
-        switch (key) {
-            case "quiet" -> b.quiet(value);
-            case "dry_run" -> b.dryRun(value);
-            case "icons" -> b.icons(value);
-            default -> {
-                source.sendFailure(Component.literal(Uee.NAME + ": " + key + " is not settable"));
-                return 0;
-            }
-        }
-        remember(key + "=" + value, b.build());
-        report(source, switch (key) {
-            case "quiet" -> value ? "quiet: one summary line only" : "verbose again";
-            case "dry_run" -> value
-                    ? "dry run: nothing will be written, but the plan is real"
-                    : "writing again";
-            default -> "icons: " + value;
-        });
-        return 1;
-    }
-
-    private static java.util.Set<String> splitToSet(String arg) {
-        java.util.Set<String> out = new java.util.LinkedHashSet<>();
-        if (arg == null) {
-            return out;
-        }
-        for (String piece : arg.split("[,\s]+")) {
-            if (!piece.isBlank()) {
-                out.add(piece.trim());
-            }
-        }
-        return out;
     }
 
     private static void report(CommandSourceStack source, String message) {
@@ -916,9 +739,10 @@ public final class UeeCommand {
 
     /** Lists what the long form can set, so it is discoverable without the documentation. */
     private static int listSettables(CommandSourceStack source) {
-        source.sendSuccess(() -> Component.literal("settable / 可设置：" + SESSION_LOG.size()
+        java.util.List<String> log = SURFACE.log();
+        source.sendSuccess(() -> Component.literal("settable / 可设置：" + log.size()
                 + " override(s) this session"), false);
-        for (String line : SESSION_LOG) {
+        for (String line : log) {
             source.sendSuccess(() -> Component.literal("  " + line), false);
         }
         source.sendSuccess(() -> Component.literal("  /uee set fields <name> …"), false);
@@ -936,8 +760,9 @@ public final class UeeCommand {
         source.sendSuccess(() -> Component.literal(
                 "  every one of these is also a config file key; /uee config template lists them"),
                 false);
-        return SESSION_LOG.size();
+        return log.size();
     }
+
 
     // ---------------------------------------------------------------- the fourth interface
 
