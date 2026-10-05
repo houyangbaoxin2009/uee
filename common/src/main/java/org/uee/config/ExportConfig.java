@@ -167,6 +167,20 @@ public final class ExportConfig {
         return shardSize;
     }
 
+    /**
+     * The size of one shard's output buffer before it is flushed, derived from the configured
+     * ceiling divided by sixteen.
+     *
+     * <p><b>Not a ceiling on the run.</b> It is a per-shard valve: memory is bounded by the number of
+     * live shards times this, which {@code ScaleTest} measures as a few hundred kilobytes in practice
+     * because buffers are flushed far more often than the valve would require. Setting it low
+     * therefore does not make a run use less memory, and setting it high does not make one use more —
+     * what actually bounds a run is the flush interval, and what the {@code ScaleTest} evidence shows
+     * is that the whole export stays under a small constant however large the pack is.
+     *
+     * <p>The name is kept because it is a published config key; the wording around it is what had to
+     * be corrected.
+     */
     public long memoryLimitBytes() {
         return memoryLimitBytes;
     }
@@ -465,6 +479,10 @@ public final class ExportConfig {
         private boolean incremental = false;
         private boolean shardByNamespace = true;
         private int shardSize = 20_000;
+        /**
+         * Per-shard buffer ceiling, in bytes. See {@link #memoryLimitBytes()} for what this does and
+         * does not bound.
+         */
         private long memoryLimitBytes = 256L * 1024 * 1024;
         private int threads = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
         private boolean includePaths = false;

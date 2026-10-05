@@ -184,10 +184,29 @@ tasks.register('commandSurfaceTest', JavaExec) {
     args = [layout.buildDirectory.dir('command-surface-test').get().asFile.absolutePath]
 }
 
+/**
+ * Checks that the export's memory does not grow with the pack.
+ *
+ * <p>This is the one claim the pipeline is built on, and it had never been measured. The check runs
+ * its largest case again inside child JVMs with a small fixed heap, so it is satisfied only by writing
+ * far more output than the heap could hold -- which no buffering design can fake.
+ */
+tasks.register('scaleTest', JavaExec) {
+    description = 'Checks that export memory is independent of pack size.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.ScaleTest'
+    // A generous heap so the measurement itself is never the thing under pressure: what is being
+    // measured is the pipeline's live set, not this JVM's ability to allocate.
+    maxHeapSize = '2g'
+    args = [layout.buildDirectory.dir('scale-test').get().asFile.absolutePath]
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
     group = 'verification'
     dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest',
-            'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest'
+            'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest', 'scaleTest'
 }

@@ -728,7 +728,13 @@ public final class ConfigFile {
                 // Split by size, taking precedence over shard_size. 0 disables it; a record never
                 // spans two files, so a part may overshoot by one record.
                 max_file_mb = 0
-                memory_limit_mb = 256           // 内存上限 / memory ceiling, MiB
+                // 单个分片缓冲区的上限（不是整次运行的内存上限！）。
+                // 实际占用由「活跃分片数 × 该值」决定，而缓冲区远早于此就被刷写，
+                // 所以实测保留集只有几百 KiB，与包大小无关（见 ScaleTest）。
+                // A per-shard buffer ceiling, NOT a ceiling on the run. Memory is
+                // live-shards x this, and buffers flush far sooner, so this is a valve
+                // rather than an operating point.
+                memory_limit_mb = 256
                 threads = 0                     // 并发度，0 = 自动 / worker threads, 0 = auto
 
                 // ─── 过滤 / filters ────────────────────────────────────────────────

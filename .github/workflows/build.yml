@@ -45,6 +45,9 @@ jobs:
       - name: Run the command-surface test
         run: ./gradlew commandSurfaceTest
 
+      - name: Check that export memory is independent of pack size
+        run: ./gradlew scaleTest
+
   # Each loader builds separately because each needs its own patched game jar. `-x test` keeps the
   # core checks in the job above rather than repeating them four times.
   loaders:
