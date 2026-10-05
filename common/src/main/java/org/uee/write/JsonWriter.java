@@ -95,14 +95,26 @@ public class JsonWriter extends Writer {
             out.ascii(",\"translationKey\":");
             Json.quote(out, e.translationKey());
         }
+        if (has("translationKey")) {
+            out.ascii(",\"translationKey\":");
+            Json.quote(out, e.translationKey());
+        }
         nameFields(e.nameZh(), e.nameEn());
         out.ascii(",\"maxStackSize\":").dec(e.maxStackSize());
-        out.ascii(",\"maxDurability\":").dec(e.maxDurability());
-        out.ascii(",\"tags\":");
-        Json.quoteArray(out, e.tags());
-        out.ascii(",\"creativeTabs\":");
-        Json.quoteArray(out, e.creativeTabs());
-        out.ascii(",\"blockItem\":").ascii(e.blockItem() ? "true" : "false");
+        if (has("maxDurability")) {
+            out.ascii(",\"maxDurability\":").dec(e.maxDurability());
+        }
+        if (has("tags")) {
+            out.ascii(",\"tags\":");
+            Json.quoteArray(out, e.tags());
+        }
+        if (has("creativeTabs")) {
+            out.ascii(",\"creativeTabs\":");
+            Json.quoteArray(out, e.creativeTabs());
+        }
+        if (has("blockItem")) {
+            out.ascii(",\"blockItem\":").ascii(e.blockItem() ? "true" : "false");
+        }
         iconFields(e.iconLarge(), "largeIcon", e.iconSmall(), "smallIcon");
         endRecord();
     }
@@ -119,7 +131,7 @@ public class JsonWriter extends Writer {
             Json.quote(out, e.translationKey());
         }
         nameFields(e.nameZh(), e.nameEn());
-        if (e.category() != null) {
+        if (has("category") && e.category() != null) {
             out.ascii(",\"category\":");
             Json.quote(out, e.category());
         }
@@ -138,13 +150,17 @@ public class JsonWriter extends Writer {
         out.ascii(",\"hardness\":").jsonNum(e.hardness());
         out.ascii(",\"blastResistance\":").jsonNum(e.blastResistance());
         out.ascii(",\"lightEmission\":").dec(e.lightEmission());
-        out.ascii(",\"hasBlockItem\":").ascii(e.hasBlockItem() ? "true" : "false");
-        if (e.material() != null) {
+        if (has("hasBlockItem")) {
+            out.ascii(",\"hasBlockItem\":").ascii(e.hasBlockItem() ? "true" : "false");
+        }
+        if (has("material") && e.material() != null) {
             out.ascii(",\"material\":");
             Json.quote(out, e.material());
         }
-        out.ascii(",\"tags\":");
-        Json.quoteArray(out, e.tags());
+        if (has("tags")) {
+            out.ascii(",\"tags\":");
+            Json.quoteArray(out, e.tags());
+        }
         endRecord();
     }
 

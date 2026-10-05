@@ -40,27 +40,49 @@ public final class ElementExpander {
         return rows;
     }
 
+    /**
+     * Emits an item.
+     *
+     * <p>The optional fields are guarded so a projection can drop them. What stays unguarded is the
+     * identity and the two things a consumer almost always needs — the names and the stack size — on
+     * the grounds that a record without those is not a smaller record, it is one that cannot be shown
+     * to anyone.
+     */
     public static void item(ItemElement e, FieldVisitor v) {
         v.element(ElementKind.ITEM, e.registryName());
         v.string("namespace", e.namespace());
-        v.string("translationKey", e.translationKey());
+        if (v.has("translationKey")) {
+            v.string("translationKey", e.translationKey());
+        }
         v.string("name", e.nameZh());
         v.string("englishName", e.nameEn());
         v.number("maxStackSize", e.maxStackSize());
-        v.number("maxDurability", e.maxDurability());
-        v.array("tags", e.tags());
-        v.array("creativeTabs", e.creativeTabs());
-        v.bool("blockItem", e.blockItem());
+        if (v.has("maxDurability")) {
+            v.number("maxDurability", e.maxDurability());
+        }
+        if (v.has("tags")) {
+            v.array("tags", e.tags());
+        }
+        if (v.has("creativeTabs")) {
+            v.array("creativeTabs", e.creativeTabs());
+        }
+        if (v.has("blockItem")) {
+            v.bool("blockItem", e.blockItem());
+        }
         v.end();
     }
 
     public static void entity(EntityElement e, FieldVisitor v) {
         v.element(ElementKind.ENTITY, e.registryName());
         v.string("namespace", e.namespace());
-        v.string("translationKey", e.translationKey());
+        if (v.has("translationKey")) {
+            v.string("translationKey", e.translationKey());
+        }
         v.string("name", e.nameZh());
         v.string("englishName", e.nameEn());
-        v.string("category", e.category());
+        if (v.has("category")) {
+            v.string("category", e.category());
+        }
         v.end();
     }
 
@@ -69,12 +91,24 @@ public final class ElementExpander {
         v.string("namespace", e.namespace());
         v.string("name", e.nameZh());
         v.string("englishName", e.nameEn());
-        v.decimal("hardness", e.hardness());
-        v.decimal("blastResistance", e.blastResistance());
-        v.number("lightEmission", e.lightEmission());
-        v.bool("hasBlockItem", e.hasBlockItem());
-        v.string("material", e.material());
-        v.array("tags", e.tags());
+        if (v.has("hardness")) {
+            v.decimal("hardness", e.hardness());
+        }
+        if (v.has("blastResistance")) {
+            v.decimal("blastResistance", e.blastResistance());
+        }
+        if (v.has("lightEmission")) {
+            v.number("lightEmission", e.lightEmission());
+        }
+        if (v.has("hasBlockItem")) {
+            v.bool("hasBlockItem", e.hasBlockItem());
+        }
+        if (v.has("material")) {
+            v.string("material", e.material());
+        }
+        if (v.has("tags")) {
+            v.array("tags", e.tags());
+        }
         v.end();
     }
 

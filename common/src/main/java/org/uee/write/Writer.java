@@ -112,4 +112,27 @@ public abstract class Writer {
     public boolean isEmpty() {
         return out.isEmpty();
     }
+
+    /**
+     * Whether a field should be written, per the configuration's projection.
+     *
+     * <p>Declared on the class rather than implemented per writer: a class method takes precedence
+     * over an interface default, so every writer that implements {@link FieldVisitor} gets projection
+     * without writing anything. A writer that emits its own field set — the wiki projection, whose
+     * names are a contract with a third party — never calls this and is therefore unaffected.
+     */
+    public boolean has(String field) {
+        return config.fields().has(field);
+    }
+
+    /**
+     * Bytes buffered and not yet drained.
+     *
+     * <p>Exposed so the pipeline can decide whether a shard should roll over on size. The writer is
+     * still a pure sink — this reports, it does not flush — and the alternative would be flushing to
+     * measure, which defeats the point of buffering.
+     */
+    public int pendingBytes() {
+        return out.length();
+    }
 }

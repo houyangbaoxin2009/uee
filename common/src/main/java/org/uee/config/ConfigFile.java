@@ -60,6 +60,8 @@ public final class ConfigFile {
     public static final String[] KNOWN_KEYS = {
             "output", "package", "formats", "kinds",
             "analyze", "analysis_separate", "package_per_kind", "quiet",
+            "fields", "exclude_fields", "dry_run", "include_tags", "exclude_tags",
+            "max_file_mb",
             "icons", "pretty", "incremental", "include_paths",
             "shard_by_namespace", "shard_size", "memory_limit_mb", "threads",
             "include_namespaces", "exclude_namespaces", "exclude_mods",
@@ -74,6 +76,11 @@ public final class ConfigFile {
     private final Boolean analysisSeparate;
     private final Boolean packagePerKind;
     private final Boolean quiet;
+    private final FieldMask fields;
+    private final Boolean dryRun;
+    private final Set<String> includeTags;
+    private final Set<String> excludeTags;
+    private final Integer maxFileMb;
     private final Boolean icons;
     private final Boolean pretty;
     private final Boolean incremental;
@@ -107,6 +114,15 @@ public final class ConfigFile {
         this.analysisSeparate = b.analysisSeparate;
         this.packagePerKind = b.packagePerKind;
         this.quiet = b.quiet;
+        // The two field sets are one request: include names what to keep, exclude names what to drop,
+        // and either can be given without the other.
+        this.fields = b.includeFields == null && b.excludeFields == null
+                ? FieldMask.all()
+                : FieldMask.of(b.includeFields, b.excludeFields);
+        this.dryRun = b.dryRun;
+        this.includeTags = b.includeTags;
+        this.excludeTags = b.excludeTags;
+        this.maxFileMb = b.maxFileMb;
         this.icons = b.icons;
         this.pretty = b.pretty;
         this.incremental = b.incremental;
@@ -186,6 +202,23 @@ public final class ConfigFile {
         if (quiet != null) {
             keys.add("quiet");
         }
+        if (fields != null && !fields.isAll()) {
+            // Asked of the mask rather than of the reference: the field is derived, so it is never
+            // null and "is it set" has to mean "does it constrain anything".
+            keys.add("fields");
+        }
+        if (dryRun != null) {
+            keys.add("dry_run");
+        }
+        if (includeTags != null) {
+            keys.add("include_tags");
+        }
+        if (excludeTags != null) {
+            keys.add("exclude_tags");
+        }
+        if (maxFileMb != null) {
+            keys.add("max_file_mb");
+        }
         if (icons != null) {
             keys.add("icons");
         }
@@ -253,7 +286,8 @@ public final class ConfigFile {
         }
         return output == null && packageName == null && formats == null && kinds == null
                 && analyze == null && analysisSeparate == null && packagePerKind == null
-                && quiet == null
+                && quiet == null && (fields == null || fields.isAll()) && dryRun == null
+                && includeTags == null && excludeTags == null && maxFileMb == null
                 && icons == null && pretty == null && incremental == null && includePaths == null
                 && shardByNamespace == null && shardSize == null && memoryLimitMb == null
                 && threads == null && includeNamespaces == null && excludeNamespaces == null
@@ -295,6 +329,25 @@ public final class ConfigFile {
         }
         if (quiet != null) {
             b.quiet(quiet);
+        }
+        if (fields != null) {
+            b.fields(fields);
+        }
+        if (dryRun != null) {
+            b.dryRun(dryRun);
+        }
+        if (includeTags != null) {
+            for (String tag : includeTags) {
+                b.includeTag(tag);
+            }
+        }
+        if (excludeTags != null) {
+            for (String tag : excludeTags) {
+                b.excludeTag(tag);
+            }
+        }
+        if (maxFileMb != null) {
+            b.maxFileBytes(maxFileMb * 1024L * 1024L);
         }
         if (icons != null) {
             b.icons(icons);
@@ -435,6 +488,12 @@ public final class ConfigFile {
                 case "analysis_separate" -> b.analysisSeparate = value.asBool();
                 case "package_per_kind" -> b.packagePerKind = value.asBool();
                 case "quiet" -> b.quiet = value.asBool();
+                case "fields" -> b.includeFields = new LinkedHashSet<>(strings(value));
+                case "exclude_fields" -> b.excludeFields = new LinkedHashSet<>(strings(value));
+                case "dry_run" -> b.dryRun = value.asBool();
+                case "include_tags" -> b.includeTags = new LinkedHashSet<>(strings(value));
+                case "exclude_tags" -> b.excludeTags = new LinkedHashSet<>(strings(value));
+                case "max_file_mb" -> b.maxFileMb = (int) value.asInt();
                 case "icons" -> b.icons = value.asBool();
                 case "pretty" -> b.pretty = value.asBool();
                 case "incremental" -> b.incremental = value.asBool();
@@ -626,12 +685,38 @@ public final class ConfigFile {
                 package_per_kind = true         // 每个类目一个子目录 / one sub-directory per category
                 quiet = false                   // 静默：只留汇总行。供函数/脚本调用时用 / quiet: summary only, for functions and scripts
 
+                // ─── 记录内容与筛选 / what goes in a record ───────────────────────────
+                // 只保留这些字段 / keep only these fields (identity fields are always kept):
+                //   translationKey maxDurability tags creativeTabs blockItem
+                //   hardness blastResistance lightEmission hasBlockItem material category
+                fields = []
+                // 反向写法 / or name what to drop:
+                exclude_fields = []
+                // 字段投影只作用于 json ndjson td yaml toml xml；
+                // 百科投影(zk)与 zd 不受影响——它们的字段名是对外契约 / a schema.
+                // Projection applies to json ndjson td yaml toml xml only.
+                // 留空 = 全字段。省略掉标识字段（如 registryName）的请求会被忽略。
+                // Empty means every field; a request to drop an identity field is ignored.
+
+                // 只导出带这些标签的元素 / export only elements carrying one of these tags
+                include_tags = []
+                // 这些标签的元素跳过 / elements carrying these are skipped
+                exclude_tags = []
+
+                // 试运行：不写任何文件，但仍然给出真实的文件清单与记录数
+                // Dry run: write nothing, but report the real file set and record counts
+                dry_run = false
+
                 // ─── 采集 / collection ─────────────────────────────────────────────
                 icons = false                   // 图标渲染，较慢 / render icons, slow
                 pretty = false                  // 美化缩进，仅 json / pretty-print, json only
                 include_paths = false           // 记录容器全路径；产物要发布，默认关 / full container paths; off
                 shard_by_namespace = true       // 按命名空间分片 / shard per namespace
                 shard_size = 20000              // 每片元素上限 / elements per shard
+                // 按字节切分（优先于 shard_size）。0 = 不按字节切；整条记录不会跨文件。
+                // Split by size, taking precedence over shard_size. 0 disables it; a record never
+                // spans two files, so a part may overshoot by one record.
+                max_file_mb = 0
                 memory_limit_mb = 256           // 内存上限 / memory ceiling, MiB
                 threads = 0                     // 并发度，0 = 自动 / worker threads, 0 = auto
 
@@ -774,6 +859,13 @@ public final class ConfigFile {
         v.put("analysis_separate", Boolean.toString(config.analysisSeparate()));
         v.put("package_per_kind", Boolean.toString(config.packagePerKind()));
         v.put("quiet", Boolean.toString(config.quiet()));
+        v.put("fields", config.fields().include().isEmpty()
+                ? "[]" : list(config.fields().include()));
+        v.put("exclude_fields", list(config.fields().exclude()));
+        v.put("dry_run", Boolean.toString(config.dryRun()));
+        v.put("include_tags", list(config.includeTags()));
+        v.put("exclude_tags", list(config.excludeTags()));
+        v.put("max_file_mb", Long.toString(config.maxFileBytes() / (1024 * 1024)));
         v.put("icons", Boolean.toString(config.icons()));
         v.put("pretty", Boolean.toString(config.pretty()));
         v.put("include_paths", Boolean.toString(config.includePaths()));
@@ -863,6 +955,12 @@ public final class ConfigFile {
         private Boolean analysisSeparate;
         private Boolean packagePerKind;
         private Boolean quiet;
+        private Set<String> includeFields;
+        private Set<String> excludeFields;
+        private Boolean dryRun;
+        private Set<String> includeTags;
+        private Set<String> excludeTags;
+        private Integer maxFileMb;
         private Boolean icons;
         private Boolean pretty;
         private Boolean incremental;
@@ -953,6 +1051,44 @@ public final class ConfigFile {
 
         public Builder quiet(boolean on) {
             this.quiet = on;
+            return this;
+        }
+
+        public Builder fields(FieldMask mask) {
+            if (mask != null) {
+                this.includeFields = new LinkedHashSet<>(mask.include());
+                this.excludeFields = new LinkedHashSet<>(mask.exclude());
+            }
+            return this;
+        }
+
+        public Builder includeFields(Set<String> names) {
+            this.includeFields = names;
+            return this;
+        }
+
+        public Builder excludeFields(Set<String> names) {
+            this.excludeFields = names;
+            return this;
+        }
+
+        public Builder dryRun(boolean on) {
+            this.dryRun = on;
+            return this;
+        }
+
+        public Builder includeTags(Set<String> tags) {
+            this.includeTags = tags;
+            return this;
+        }
+
+        public Builder excludeTags(Set<String> tags) {
+            this.excludeTags = tags;
+            return this;
+        }
+
+        public Builder maxFileMb(int mb) {
+            this.maxFileMb = mb;
             return this;
         }
 

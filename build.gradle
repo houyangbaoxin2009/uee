@@ -149,10 +149,28 @@ tasks.register('functionTest', JavaExec) {
     args = [layout.buildDirectory.dir('function-test').get().asFile.absolutePath]
 }
 
+/**
+ * Runs the default-and-knobs checks.
+ *
+ * <p>Two claims, both asserted rather than assumed: that the one-key default is the right answer most
+ * of the time — complete for its purpose, and not straddling the collection/analysis boundary — and
+ * that every long-form setting actually reaches the output. A setting that is parsed but not applied
+ * is worse than one that is absent, so each knob is verified by running an export and looking at the
+ * result rather than by inspecting the configuration object.
+ */
+tasks.register('defaultsTest', JavaExec) {
+    description = 'Runs the one-key-default and long-form-setting checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.DefaultsAndKnobsTest'
+    args = [layout.buildDirectory.dir('defaults-test').get().asFile.absolutePath]
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
     group = 'verification'
     dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest',
-            'datapackTest', 'functionTest'
+            'datapackTest', 'functionTest', 'defaultsTest'
 }

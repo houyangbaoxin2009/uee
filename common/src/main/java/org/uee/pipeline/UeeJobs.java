@@ -57,6 +57,18 @@ public final class UeeJobs {
 
     /** Submits a run. The work happens on a worker thread; the caller gets the job immediately. */
     public UeeJob submit(ExportConfig config, Path root, Supplier<ExportReport> work) {
+        return submit(config, root, work, null);
+    }
+
+    /**
+     * Submits a run and arranges to be told when it finishes.
+     *
+     * <p>The notifier exists so a player who started a run can be given its result without the run
+     * having blocked anything. The core has no idea who or what is being notified — a command passes a
+     * lambda that resolves its own recipient — which is what keeps this usable with no game present.
+     */
+    public UeeJob submit(ExportConfig config, Path root, Supplier<ExportReport> work,
+            java.util.function.Consumer<UeeJob> whenFinished) {
         synchronized (lock) {
             if (shutDown) {
                 throw new IllegalStateException("the job runner is shut down");
@@ -66,6 +78,7 @@ public final class UeeJobs {
                         + active.size() + "); wait for /uee jobs to reach 0");
             }
             UeeJob job = new UeeJob(nextId.getAndIncrement(), config, root);
+            job.notifyWith(whenFinished);
             active.addLast(job);
             executor().submit(() -> run(job, work));
             return job;
@@ -169,6 +182,9 @@ public final class UeeJobs {
             job.markFailed(t.getClass().getSimpleName() + ": " + t.getMessage());
         } finally {
             finish(job);
+            // Announced after the job leaves the active set, so a notifier that inspects
+            // /uee jobs sees a consistent picture rather than itself.
+            job.announce();
         }
     }
 

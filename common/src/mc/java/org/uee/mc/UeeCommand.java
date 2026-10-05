@@ -60,8 +60,9 @@ import org.uee.pipeline.UeeJobs;
  *
  * <ul>
  *   <li><b>It must not block the tick.</b> A function runs inside a tick, and an export that takes
- *       seconds there will trip the server watchdog. So the export has an asynchronous form,
- *       {@code /uee export async}, which returns immediately and is polled with {@code /uee jobs}.
+ *       seconds there will trip the server watchdog. Collection and writing are one streaming pass, so
+ *       there is no way to move only the writing off the thread — which means <b>every export is
+ *       asynchronous</b>. See the next section.
  *   <li><b>It must have a usable result code.</b> A function cannot receive a value, but
  *       {@code execute store result} and {@code execute store success} read the command's return
  *       value. Every verb here therefore returns something meaningful, documented per verb below.
@@ -69,15 +70,35 @@ import org.uee.pipeline.UeeJobs;
  *       export in a tick loop buries the log. {@code quiet = true} keeps one summary line.
  * </ul>
  *
+ * <h2>Why the export verbs are asynchronous</h2>
+ *
+ * <p>An export reads the registries and writes artifacts in one pass, so the whole duration is on the
+ * calling thread. A synchronous export therefore holds the server thread for its entire run, and on a
+ * large pack that is long enough to trip the watchdog. Since the short form of the command has to be
+ * the safe one, <b>the short form starts a job and returns</b>:
+ *
+ * <pre>
+ * /uee                     start the default export, return at once
+ * /uee export items        start an export of one category, return at once
+ * /uee export sync items   export on this thread, for when you know it is small
+ * </pre>
+ *
+ * <p>A caller with a player behind it is told the result when the run finishes, so the short form does
+ * not cost them the summary — they simply are not made to wait for it. A caller with nobody behind it
+ * (a function, a command block, the console) polls {@code /uee jobs} instead.
+ *
+ * <p>The one deliberate exception is {@code /uee analyze}: it reads loader metadata only, does no
+ * registry walk and writes nothing, so it is cheap enough to answer inline and much more useful that
+ * way.
+ *
  * <h2>Result codes</h2>
  *
  * <pre>
- * /uee                        files written; 0 on failure
- * /uee export …               files written; 0 on failure
- * /uee export async …         1 when started, 0 when refused
+ * /uee …                      1 when a job was started, 0 when refused
+ * /uee export sync …          files written; 0 on failure
  * /uee jobs                   unfinished jobs — poll this until 0
- * /uee job &lt;id&gt;              1 if found, 0 if not
- * /uee job &lt;id&gt; cancel       1 if cancelled, 0 if it had already started
+ * /uee job &lt;id&gt;               files written if done, 1 if still running, 0 otherwise
+ * /uee job &lt;id&gt; cancel        1 if cancelled, 0 if it had already started
  * /uee analyze                findings produced
  * /uee flow &lt;name&gt;            as /uee export, or 1 for a function flow that was started
  * /uee flows | targets | …    count listed
@@ -112,25 +133,91 @@ public final class UeeCommand {
         return Commands.literal(name)
                 .requires(source -> source.hasPermission(PERMISSION))
                 // Bare /uee: the one-key default, placed first so it reads as the primary action.
-                .executes(ctx -> runDefault(ctx.getSource(), null, null))
+                // Starts a job rather than blocking the tick; see the class doc.
+                .executes(ctx -> runAsync(ctx.getSource(), ConfigFile.empty()))
                 .then(Commands.literal("help").executes(ctx -> help(ctx.getSource(), name)))
                 .then(Commands.literal("status").executes(ctx -> status(ctx.getSource())))
                 .then(Commands.literal("kinds").executes(ctx -> listKinds(ctx.getSource())))
                 .then(Commands.literal("listformats").executes(ctx -> listFormats(ctx.getSource())))
 
                 .then(Commands.literal("export")
-                        .executes(ctx -> runDefault(ctx.getSource(), null, null))
-                        // The function-facing form: returns in the same tick and is polled with
-                        // /uee jobs. First so it reads as an equal of the plain form rather than a
-                        // modifier bolted on.
-                        .then(Commands.literal("async")
-                                .executes(ctx -> runAsync(ctx.getSource(), ConfigFile.empty()))
+                        // The short form is the safe form: start a job and return. See the class doc.
+                        .executes(ctx -> runAsync(ctx.getSource(), ConfigFile.empty()))
+                        // Explicitly on this thread, for when the caller knows the run is small.
+                        .then(Commands.literal("sync")
+                                .executes(ctx -> runWith(ctx.getSource(), ConfigFile.empty()))
                                 .then(Commands.argument("kinds", StringArgumentType.greedyString())
-                                        .executes(ctx -> runAsync(ctx.getSource(),
+                                        .executes(ctx -> runWith(ctx.getSource(),
                                                 kindsOnly(arg(ctx, "kinds"))))))
                         .then(Commands.argument("kinds", StringArgumentType.greedyString())
-                                .executes(ctx -> runDefault(ctx.getSource(),
-                                        arg(ctx, "kinds"), null))))
+                                .executes(ctx -> runAsync(ctx.getSource(),
+                                        kindsOnly(arg(ctx, "kinds"))))))
+
+                // ── The long form: one verb per aspect, each also reachable from the config file.
+                // Anything set here is an override on top of the file, so a one-off run does not
+                // require editing anything.
+                .then(Commands.literal("set")
+                        .then(Commands.literal("fields")
+                                .then(Commands.argument("names", StringArgumentType.greedyString())
+                                        .executes(ctx -> setFields(ctx.getSource(),
+                                                arg(ctx, "names")))))
+                        .then(Commands.literal("exclude-fields")
+                                .then(Commands.argument("names", StringArgumentType.greedyString())
+                                        .executes(ctx -> setExcludeFields(ctx.getSource(),
+                                                arg(ctx, "names")))))
+                        .then(Commands.literal("tags")
+                                .then(Commands.argument("tags", StringArgumentType.greedyString())
+                                        .executes(ctx -> setTags(ctx.getSource(),
+                                                arg(ctx, "tags"), false))))
+                        .then(Commands.literal("skip-tags")
+                                .then(Commands.argument("tags", StringArgumentType.greedyString())
+                                        .executes(ctx -> setTags(ctx.getSource(),
+                                                arg(ctx, "tags"), true))))
+                        .then(Commands.literal("namespaces")
+                                .then(Commands.argument("namespaces",
+                                                StringArgumentType.greedyString())
+                                        .executes(ctx -> setNamespaces(ctx.getSource(),
+                                                arg(ctx, "namespaces"), false))))
+                        .then(Commands.literal("skip-namespaces")
+                                .then(Commands.argument("namespaces",
+                                                StringArgumentType.greedyString())
+                                        .executes(ctx -> setNamespaces(ctx.getSource(),
+                                                arg(ctx, "namespaces"), true))))
+                        .then(Commands.literal("skip-mods")
+                                .then(Commands.argument("mods", StringArgumentType.greedyString())
+                                        .executes(ctx -> setSkipMods(ctx.getSource(),
+                                                arg(ctx, "mods")))))
+                        .then(Commands.literal("shards")
+                                .then(Commands.argument("records",
+                                                com.mojang.brigadier.arguments.IntegerArgumentType
+                                                        .integer(1))
+                                        .executes(ctx -> setShards(ctx.getSource(),
+                                                com.mojang.brigadier.arguments.IntegerArgumentType
+                                                        .getInteger(ctx, "records")))))
+                        .then(Commands.literal("max-file-mb")
+                                .then(Commands.argument("mb",
+                                                com.mojang.brigadier.arguments.IntegerArgumentType
+                                                        .integer(0))
+                                        .executes(ctx -> setMaxFile(ctx.getSource(),
+                                                com.mojang.brigadier.arguments.IntegerArgumentType
+                                                        .getInteger(ctx, "mb")))))
+                        .then(Commands.literal("output")
+                                .then(Commands.argument("dir", StringArgumentType.greedyString())
+                                        .executes(ctx -> setOutput(ctx.getSource(),
+                                                arg(ctx, "dir")))))
+                        .then(Commands.literal("quiet")
+                                .executes(ctx -> setFlag(ctx.getSource(), "quiet", true)))
+                        .then(Commands.literal("noisy")
+                                .executes(ctx -> setFlag(ctx.getSource(), "quiet", false)))
+                        .then(Commands.literal("dry-run")
+                                .executes(ctx -> setFlag(ctx.getSource(), "dry_run", true)))
+                        .then(Commands.literal("icons")
+                                .executes(ctx -> setFlag(ctx.getSource(), "icons", true)))
+                        .then(Commands.literal("no-icons")
+                                .executes(ctx -> setFlag(ctx.getSource(), "icons", false)))
+                        // The list of what can be set, so the long form is discoverable without the
+                        // documentation.
+                        .executes(ctx -> listSettables(ctx.getSource())))
 
                 // Job inspection. /uee jobs returns the unfinished count, which is how a function
                 // waits: execute store result ... run uee jobs, and loop until it reaches zero.
@@ -149,7 +236,7 @@ public final class UeeCommand {
                 .then(Commands.literal("formats")
                         .executes(ctx -> listFormats(ctx.getSource()))
                         .then(Commands.argument("formats", StringArgumentType.greedyString())
-                                .executes(ctx -> runDefault(ctx.getSource(), null,
+                                .executes(ctx -> runAsyncWithFormats(ctx.getSource(),
                                         arg(ctx, "formats")))))
 
                 // Analyse without exporting: answers "what is wrong with this instance" cheaply.
@@ -157,10 +244,10 @@ public final class UeeCommand {
                         .executes(ctx -> analyzeWithPolicy(ctx.getSource())))
 
                 // The two halves of a run, each on its own.
-                .then(Commands.literal("data").executes(ctx -> runDefault(ctx.getSource(),
-                        Tokens.DATA, null)))
-                .then(Commands.literal("analysis").executes(ctx -> runDefault(ctx.getSource(),
-                        Tokens.ANALYSIS, null)))
+                .then(Commands.literal("data").executes(ctx -> runAsync(ctx.getSource(),
+                        kindsOnly(Tokens.DATA))))
+                .then(Commands.literal("analysis").executes(ctx -> runAsync(ctx.getSource(),
+                        kindsOnly(Tokens.ANALYSIS))))
 
                 // The fourth interface: what datapacks define, and running a flow they declare.
                 .then(Commands.literal("flows")
@@ -238,7 +325,7 @@ public final class UeeCommand {
     private static int runWith(CommandSourceStack source, ConfigFile overrides) {
         ConfigResolver.Resolved resolved;
         try {
-            resolved = Uee.resolveForRun(overrides);
+            resolved = Uee.resolveForRun(sessionLayers(), overrides);
         } catch (IllegalStateException e) {
             source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
             return 0;
@@ -307,7 +394,7 @@ public final class UeeCommand {
     private static int runAsync(CommandSourceStack source, ConfigFile overrides) {
         ConfigResolver.Resolved resolved;
         try {
-            resolved = Uee.resolveForRun(overrides);
+            resolved = Uee.resolveForRun(sessionLayers(), overrides);
         } catch (IllegalStateException | IOException e) {
             source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
             return 0;
@@ -324,9 +411,20 @@ public final class UeeCommand {
 
         ExportConfig config = resolved.config();
         try {
-            UeeJob job = Uee.startExport(config, config.outputDir());
+            UeeJob job = Uee.startExport(config, config.outputDir(),
+                    completionNotifier(source, config));
             source.sendSuccess(() -> Component.literal(Uee.NAME + ": started job #" + job.id()
-                    + " (" + job.label() + "); poll /uee jobs until it reaches 0"), false);
+                    + " (" + job.label() + ")"), false);
+            // Said differently depending on whether anyone will be told the result: a player does not
+            // need instructions for a message they are about to receive, and a function does need
+            // them because nothing else will arrive.
+            if (source.getEntity() != null) {
+                source.sendSuccess(() -> Component.literal(
+                        "  you will be told when it finishes"), false);
+            } else {
+                source.sendSuccess(() -> Component.literal(
+                        "  poll /uee jobs until it reaches 0"), false);
+            }
             return 1;
         } catch (IllegalStateException e) {
             source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
@@ -335,6 +433,55 @@ public final class UeeCommand {
             source.sendFailure(Component.literal(Uee.NAME + " could not start the export: " + t));
             return 0;
         }
+    }
+
+    /** Builds the override description for a formats-only invocation. */
+    private static ConfigFile formatsOnly(String formatsArg) {
+        java.util.Set<String> formats = Tokens.formats(split(formatsArg));
+        if (formats == null) {
+            throw new IllegalArgumentException("unknown format in '" + formatsArg
+                    + "'; see /uee formats");
+        }
+        return ConfigFile.builder().formats(formats).build();
+    }
+
+    private static int runAsyncWithFormats(CommandSourceStack source, String formatsArg) {
+        try {
+            return runAsync(source, formatsOnly(formatsArg));
+        } catch (IllegalArgumentException e) {
+            source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    /**
+     * Arranges for the caller to be told when the run finishes, when there is someone to tell.
+     *
+     * <p>Resolved from the source at completion time rather than captured, because a source can be
+     * invalidated — a player may have logged out — and holding a stale one is worse than saying
+     * nothing. When there is nobody behind the call, which is the case for a function or a command
+     * block, no notifier is attached and the run is polled instead.
+     */
+    private static java.util.function.Consumer<UeeJob> completionNotifier(CommandSourceStack source,
+            ExportConfig config) {
+        net.minecraft.world.entity.Entity entity = source.getEntity();
+        if (entity == null) {
+            return null;
+        }
+        java.util.UUID who = entity.getUUID();
+        var server = source.getServer();
+        return job -> {
+            var player = server.getPlayerList().getPlayer(who);
+            if (player == null) {
+                // Gone. The artifacts are on disk and the summary is in the log; nothing else to do.
+                return;
+            }
+            player.sendSystemMessage(Component.literal(Uee.NAME + ": job #" + job.id() + " "
+                    + job.outcome()));
+            if (job.report() != null) {
+                player.sendSystemMessage(Component.literal("  ").append(link(source, job.root())));
+            }
+        };
     }
 
     /**
@@ -581,6 +728,215 @@ public final class UeeCommand {
                 "  td / zd tie ecosystem · yaml / toml / xml generic interchange"), false);
         source.sendSuccess(() -> Component.literal("  e.g. /uee formats json,wiki"), false);
         return 1;
+    }
+
+    // ---------------------------------------------------------------- the long form
+
+    /**
+     * Settings made this session, each as its own partial description, in the order they were made.
+     *
+     * <p>A stack rather than one merged description. Each {@code /uee set …} contributes a layer, and
+     * the resolver already knows how to apply a stack — so a session setting is not a special case in
+     * the resolution path, it is just one more layer. Merging them here would be a second
+     * implementation of layering, and the two would drift.
+     *
+     * <p>Held in memory rather than written to the config file, so experimenting does not quietly
+     * become permanent. {@code /uee config save} is how a setting that turned out to be right gets
+     * written down — an explicit step, because a command that silently edited the config would make
+     * "what am I actually running" unanswerable.
+     */
+    private static final java.util.List<ConfigFile> SESSION = new java.util.ArrayList<>(8);
+    private static final java.util.List<String> SESSION_LOG = new java.util.ArrayList<>(8);
+
+    private static void remember(String what, ConfigFile layer) {
+        SESSION.add(layer);
+        SESSION_LOG.add(what);
+    }
+
+    /**
+     * The layers this session has accumulated.
+     *
+     * <p>Ordered oldest first, so a later setting overrides an earlier one — which is what someone
+     * typing one {@code set} after another expects.
+     */
+    static java.util.List<ConfigFile> sessionLayers() {
+        return java.util.List.copyOf(SESSION);
+    }
+
+    private static int setFields(CommandSourceStack source, String names) {
+        java.util.Set<String> fields = splitToSet(names);
+        if (fields.isEmpty()) {
+            source.sendFailure(Component.literal(Uee.NAME + ": /uee set fields <name> <name> …"));
+            return 0;
+        }
+        remember("fields " + String.join(",", fields),
+                ConfigFile.builder().includeFields(fields).build());
+        report(source, "only these fields: " + String.join(", ", fields)
+                + " (identity fields are always kept)");
+        return fields.size();
+    }
+
+    private static int setExcludeFields(CommandSourceStack source, String names) {
+        java.util.Set<String> fields = splitToSet(names);
+        if (fields.isEmpty()) {
+            source.sendFailure(Component.literal(Uee.NAME
+                    + ": /uee set exclude-fields <name> <name> …"));
+            return 0;
+        }
+        remember("exclude fields " + String.join(",", fields),
+                ConfigFile.builder().excludeFields(fields).build());
+        report(source, "dropping these fields: " + String.join(", ", fields));
+        return fields.size();
+    }
+
+    private static int setTags(CommandSourceStack source, String tags, boolean exclude) {
+        java.util.Set<String> set = splitToSet(tags);
+        if (set.isEmpty()) {
+            source.sendFailure(Component.literal(Uee.NAME
+                    + ": /uee set tags <tag> … or /uee set skip-tags <tag> …"));
+            return 0;
+        }
+        if (exclude) {
+            remember("skip tags " + String.join(",", set),
+                    ConfigFile.builder().excludeTags(set).build());
+            report(source, "skipping elements tagged " + String.join(", ", set));
+        } else {
+            remember("tags " + String.join(",", set),
+                    ConfigFile.builder().includeTags(set).build());
+            report(source, "only elements tagged " + String.join(", ", set)
+                    + " (untagged elements are excluded)");
+        }
+        return set.size();
+    }
+
+    private static int setNamespaces(CommandSourceStack source, String namespaces, boolean exclude) {
+        java.util.Set<String> set = splitToSet(namespaces);
+        if (set.isEmpty()) {
+            source.sendFailure(Component.literal(Uee.NAME
+                    + ": /uee set namespaces <ns> … or /uee set skip-namespaces <ns> …"));
+            return 0;
+        }
+        ConfigFile.Builder b = ConfigFile.builder();
+        if (exclude) {
+            for (String ns : set) {
+                b.excludeNamespace(ns);
+            }
+            remember("skip namespaces " + String.join(",", set), b.build());
+            report(source, "skipping namespaces " + String.join(", ", set));
+        } else {
+            for (String ns : set) {
+                b.includeNamespace(ns);
+            }
+            remember("namespaces " + String.join(",", set), b.build());
+            report(source, "only namespaces " + String.join(", ", set));
+        }
+        return set.size();
+    }
+
+    private static int setSkipMods(CommandSourceStack source, String mods) {
+        java.util.Set<String> set = splitToSet(mods);
+        if (set.isEmpty()) {
+            source.sendFailure(Component.literal(Uee.NAME + ": /uee set skip-mods <mod> …"));
+            return 0;
+        }
+        ConfigFile.Builder b = ConfigFile.builder();
+        for (String id : set) {
+            b.excludeMod(id);
+        }
+        remember("skip mods " + String.join(",", set), b.build());
+        report(source, "skipping mods " + String.join(", ", set));
+        return set.size();
+    }
+
+    private static int setShards(CommandSourceStack source, int records) {
+        remember("shard size " + records, ConfigFile.builder().shardSize(records).build());
+        report(source, "shard size: " + records + " records");
+        return records;
+    }
+
+    private static int setMaxFile(CommandSourceStack source, int mb) {
+        remember("max file " + mb + "MiB", ConfigFile.builder().maxFileMb(mb).build());
+        report(source, mb == 0
+                ? "no byte-based file limit; shards split by record count"
+                : "shards split at about " + mb + " MiB (a whole record may overshoot)");
+        return mb;
+    }
+
+    private static int setOutput(CommandSourceStack source, String dir) {
+        if (dir == null || dir.isBlank()) {
+            source.sendFailure(Component.literal(Uee.NAME + ": /uee set output <dir>"));
+            return 0;
+        }
+        remember("output " + dir, ConfigFile.builder().output(Path.of(dir)).build());
+        report(source, "output directory: " + dir);
+        return 1;
+    }
+
+    /** Handles the boolean toggles, which all have the same shape. */
+    private static int setFlag(CommandSourceStack source, String key, boolean value) {
+        ConfigFile.Builder b = ConfigFile.builder();
+        switch (key) {
+            case "quiet" -> b.quiet(value);
+            case "dry_run" -> b.dryRun(value);
+            case "icons" -> b.icons(value);
+            default -> {
+                source.sendFailure(Component.literal(Uee.NAME + ": " + key + " is not settable"));
+                return 0;
+            }
+        }
+        remember(key + "=" + value, b.build());
+        report(source, switch (key) {
+            case "quiet" -> value ? "quiet: one summary line only" : "verbose again";
+            case "dry_run" -> value
+                    ? "dry run: nothing will be written, but the plan is real"
+                    : "writing again";
+            default -> "icons: " + value;
+        });
+        return 1;
+    }
+
+    private static java.util.Set<String> splitToSet(String arg) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        if (arg == null) {
+            return out;
+        }
+        for (String piece : arg.split("[,\s]+")) {
+            if (!piece.isBlank()) {
+                out.add(piece.trim());
+            }
+        }
+        return out;
+    }
+
+    private static void report(CommandSourceStack source, String message) {
+        source.sendSuccess(() -> Component.literal(Uee.NAME + ": " + message), false);
+        source.sendSuccess(() -> Component.literal(
+                "  in effect until the server restarts; /uee config save makes it permanent"), false);
+    }
+
+    /** Lists what the long form can set, so it is discoverable without the documentation. */
+    private static int listSettables(CommandSourceStack source) {
+        source.sendSuccess(() -> Component.literal("settable / 可设置：" + SESSION_LOG.size()
+                + " override(s) this session"), false);
+        for (String line : SESSION_LOG) {
+            source.sendSuccess(() -> Component.literal("  " + line), false);
+        }
+        source.sendSuccess(() -> Component.literal("  /uee set fields <name> …"), false);
+        source.sendSuccess(() -> Component.literal("  /uee set exclude-fields <name> …"), false);
+        source.sendSuccess(() -> Component.literal("  /uee set tags | skip-tags <tag> …"), false);
+        source.sendSuccess(() -> Component.literal(
+                "  /uee set namespaces | skip-namespaces <ns> …"), false);
+        source.sendSuccess(() -> Component.literal("  /uee set skip-mods <mod> …"), false);
+        source.sendSuccess(() -> Component.literal("  /uee set shards <records>"), false);
+        source.sendSuccess(() -> Component.literal("  /uee set max-file-mb <n>   (0 = by count)"),
+                false);
+        source.sendSuccess(() -> Component.literal("  /uee set output <dir>"), false);
+        source.sendSuccess(() -> Component.literal(
+                "  /uee set quiet | noisy | dry-run | icons | no-icons"), false);
+        source.sendSuccess(() -> Component.literal(
+                "  every one of these is also a config file key; /uee config template lists them"),
+                false);
+        return SESSION_LOG.size();
     }
 
     // ---------------------------------------------------------------- the fourth interface
@@ -897,6 +1253,8 @@ public final class UeeCommand {
                 "  " + p + " kinds | formats       list the accepted tokens"), false);
         source.sendSuccess(() -> Component.literal(
                 "  " + p + " status                loader, version, effective defaults"), false);
+        source.sendSuccess(() -> Component.literal(
+                "  " + p + " set <what> …        override a setting for this session"), false);
         source.sendSuccess(() -> Component.literal(
                 "  " + p + " config show|path|save|template|reload"), false);
         source.sendSuccess(() -> Component.literal(

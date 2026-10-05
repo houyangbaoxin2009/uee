@@ -56,6 +56,14 @@ public final class UeeJob {
     private volatile long finishedAt;
     private volatile ExportReport report;
     private volatile String error;
+    /**
+     * Called once when the job finishes, so whoever asked for it can be told.
+     *
+     * <p>Deliberately abstract: the core has no notion of a player or a chat channel, and this is what
+     * lets a command arrange to report back without the pipeline knowing what a command is. Null when
+     * nobody asked to be told, which is the case for a function.
+     */
+    private volatile java.util.function.Consumer<UeeJob> notifier;
 
     UeeJob(int id, ExportConfig config, Path root) {
         this.id = id;
@@ -134,6 +142,23 @@ public final class UeeJob {
         return Math.max(0, to - from);
     }
 
+    /**
+     * The result a caller should see, one line.
+     *
+     * <p>Separate from {@link #describe()} because they answer different questions: that one is for
+     * listing jobs, this one is for telling someone their run is done.
+     */
+    public String outcome() {
+        return switch (state) {
+            case DONE -> report == null ? "finished" : report.artifacts().size() + " files, "
+                    + report.records() + " records, " + report.findings() + " findings in "
+                    + elapsedMillis() + " ms";
+            case FAILED -> "failed: " + error;
+            case CANCELLED -> "cancelled";
+            default -> state.token() + " (" + elapsedMillis() + " ms)";
+        };
+    }
+
     /** A one-line status, for a poll response. */
     public String describe() {
         StringBuilder sb = new StringBuilder(96);
@@ -168,6 +193,35 @@ public final class UeeJob {
         this.error = message;
         this.finishedAt = System.currentTimeMillis();
         this.state = State.FAILED;
+    }
+
+    /** Sets who to tell when this finishes. Called before the job starts. */
+    void notifyWith(java.util.function.Consumer<UeeJob> whenFinished) {
+        this.notifier = whenFinished;
+    }
+
+    /**
+     * Tells the interested party, if any.
+     *
+     * <p>A notifier that throws must not turn a successful export into a failed one, so its failure is
+     * swallowed: the run itself succeeded and the artifacts are on disk regardless of whether anyone
+     * could be told.
+     */
+    void announce() {
+        java.util.function.Consumer<UeeJob> target = notifier;
+        if (target == null) {
+            return;
+        }
+        try {
+            target.accept(this);
+        } catch (RuntimeException ignored) {
+            // Reporting is best-effort; the job's state is the record of what happened.
+        }
+    }
+
+    /** Whether anyone asked to be told when this finishes. */
+    public boolean hasNotifier() {
+        return notifier != null;
     }
 
     /** Cancels, unless the job has already finished or is past the point where stopping is safe. */

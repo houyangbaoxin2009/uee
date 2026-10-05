@@ -164,6 +164,17 @@ public final class Uee {
      * @throws IllegalStateException when no adapter is bound, or the adapter cannot be read off-thread
      */
     public static UeeJob startExport(ExportConfig config, Path root) {
+        return startExport(config, root, null);
+    }
+
+    /**
+     * Starts an export and arranges to be told when it finishes.
+     *
+     * <p>The notifier is opaque here — a command passes a lambda that resolves its own recipient — so
+     * the pipeline never learns what a player or a chat channel is.
+     */
+    public static UeeJob startExport(ExportConfig config, Path root,
+            java.util.function.Consumer<UeeJob> whenFinished) {
         LoaderAdapter current = requireAdapter();
         if (!current.supports(LoaderAdapter.CAP_REGISTRY_FROZEN)) {
             throw new IllegalStateException("the " + current.info().loader()
@@ -181,7 +192,7 @@ public final class Uee {
             } catch (IOException e) {
                 throw new IllegalStateException("export failed: " + e.getMessage(), e);
             }
-        });
+        }, whenFinished);
     }
 
     /**
@@ -233,12 +244,27 @@ public final class Uee {
      * @throws IllegalStateException when no adapter is bound
      */
     public static ConfigResolver.Resolved resolveForRun(ConfigFile overrides) throws IOException {
+        return resolveForRun(List.of(), overrides);
+    }
+
+    /**
+     * Resolves with extra layers between the file and the caller's own description.
+     *
+     * <p>Those middle layers are what a command surface accumulates: settings made earlier in the
+     * session that should apply to this run too. They go above the file — an explicit setting beats
+     * the file — and below the caller's own arguments, so a per-run override still wins.
+     */
+    public static ConfigResolver.Resolved resolveForRun(List<ConfigFile> sessionLayers,
+            ConfigFile overrides) throws IOException {
         LoaderAdapter current = requireAdapter();
         Path gameDir = Path.of(current.info().gameDirectory());
         DatapackCatalog catalog = catalog();
 
-        List<ConfigFile> layers = new java.util.ArrayList<>(3);
+        List<ConfigFile> layers = new java.util.ArrayList<>(5);
         layers.add(ConfigFile.readFrom(ConfigResolver.configDir(gameDir)));
+        if (sessionLayers != null) {
+            layers.addAll(sessionLayers);
+        }
         if (overrides != null && overrides.flow() != null) {
             FlowDefinition flow = catalog.flow(overrides.flow());
             if (flow == null) {

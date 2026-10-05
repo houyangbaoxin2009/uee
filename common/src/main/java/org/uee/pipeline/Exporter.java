@@ -71,6 +71,22 @@ public final class Exporter implements ElementSink {
     private final Path root;
     private final StringPool pool = new StringPool();
     private final Map<String, Shard> shards = new LinkedHashMap<>();
+    /**
+     * Next part number per logical shard, for size-based roll-over.
+     *
+     * <p>Separate from the shard map because it outlives any particular part: a rolled-over shard is
+     * finished, but the next record still belongs to the same logical output.
+     */
+    private final Map<String, Integer> parts = new LinkedHashMap<>();
+
+    /**
+     * Shards that have been closed, kept so they still appear in the report.
+     *
+     * <p>A rolled-over shard leaves the live map — the next record starts a new part — and without
+     * this list it would also vanish from the report, under-stating the run by exactly the files that
+     * exist because of the size budget.
+     */
+    private final List<Shard> closedShards = new ArrayList<>();
     private final List<Failure> failures = new ArrayList<>();
     /** Facts collection observed, for the analyses to read. */
     private final AnalysisContext context;
@@ -134,7 +150,14 @@ public final class Exporter implements ElementSink {
         return AnalysisEngine.of(all);
     }
 
-    /** Runs a complete export and returns the report. */
+    /**
+     * Runs a complete export and returns the report.
+     *
+     * <p>With {@code dry_run} the run is planned but nothing is written: records still stream through
+     * the writers so the artifact set and the record counts are real, but no file is opened. A caller
+     * can therefore find out exactly what a configuration produces before committing to it, without
+     * the write costs and without a temporary directory to clean up.
+     */
     public ExportReport run() throws IOException {
         Set<ElementKind> kinds = config.kinds();
         long started = System.nanoTime();
@@ -179,14 +202,7 @@ public final class Exporter implements ElementSink {
      * can report how many problems the run found without re-reading the artifacts.
      */
     private void runAnalyses(Set<ElementKind> kinds) {
-        // Analysis records are wanted when the run asked for any analysis category. Requesting only
-        // data still runs the analyses whose findings matter, but discards their records.
-        Set<ElementKind> wanted = EnumSet.noneOf(ElementKind.class);
-        for (ElementKind k : kinds) {
-            if (k.isAnalysis()) {
-                wanted.add(k);
-            }
-        }
+        Set<ElementKind> wanted = analysisRecordsWanted(kinds);
 
         AnalysisOutput output = new AnalysisOutput() {
             @Override
@@ -232,7 +248,12 @@ public final class Exporter implements ElementSink {
     }
 
     private List<ExportReport.Artifact> artifacts() {
-        List<ExportReport.Artifact> list = new ArrayList<>(shards.size());
+        List<ExportReport.Artifact> list = new ArrayList<>(shards.size() + closedShards.size());
+        for (Shard s : closedShards) {
+            // Closed parts first, so a report reads in the order the files were produced.
+            list.add(new ExportReport.Artifact(s.namespace(), s.kind().singular(), s.format(),
+                    s.file(), s.bytes(), s.records(), s.target()));
+        }
         for (Shard s : shards.values()) {
             list.add(new ExportReport.Artifact(s.namespace(), s.kind().singular(), s.format(),
                     s.file(), s.bytes(), s.records(), s.target()));
@@ -265,6 +286,30 @@ public final class Exporter implements ElementSink {
 
     private List<Shard> allShards() {
         return new ArrayList<>(shards.values());
+    }
+
+    /**
+     * Which analysis records this run should write.
+     *
+     * <h2>Two ways to ask, and why both are needed</h2>
+     *
+     * <p>Naming an analysis category is the specific request: "give me the dependency graph, and
+     * nothing else about the analysis". That is what a consumer that wants one table says.
+     *
+     * <p>Turning the analysis on without naming any is the general request, and it has to mean "write
+     * all of them" — otherwise a category set like the default, which is pure collected content,
+     * would run every check and then write none of their results. That would make the one-key command
+     * quietly produce no diagnostics at all while reporting findings, which is the sort of silence
+     * that reads as "nothing to report".
+     */
+    private static Set<ElementKind> analysisRecordsWanted(Set<ElementKind> kinds) {
+        Set<ElementKind> named = EnumSet.noneOf(ElementKind.class);
+        for (ElementKind k : kinds) {
+            if (k.isAnalysis()) {
+                named.add(k);
+            }
+        }
+        return named.isEmpty() ? EnumSet.copyOf(ElementKind.ANALYSIS_KINDS) : named;
     }
 
     // ---------------------------------------------------------------- sink
@@ -325,6 +370,14 @@ public final class Exporter implements ElementSink {
             context.filter(kind, namespace);
             return;
         }
+        // The tag filter is applied here, at the one place every record passes through, so it cannot
+        // be forgotten for some category. Records without tags pass an exclude-only filter — there is
+        // nothing to exclude them for — and fail an include filter, since they cannot be shown to
+        // carry one.
+        if (!config.acceptsTags(tags)) {
+            context.filter(kind, namespace);
+            return;
+        }
         // The whole of what collection tells the analyses. Nothing downstream needs to know an
         // analysis exists. Observed once, before targets: a target is another copy of the same
         // record, not another record, so counting it twice would inflate the coverage report.
@@ -372,6 +425,8 @@ public final class Exporter implements ElementSink {
             Shard shard = shard(namespace, kind, format, target);
             action.apply(shard.writer());
             shard.countRecord();
+            // Only the shards that received this record can have grown, so only those are candidates.
+            maybeRoll(shard);
         }
         if (target.isEmpty()) {
             totalRecords++;
@@ -381,14 +436,42 @@ public final class Exporter implements ElementSink {
         }
     }
 
+    /**
+     * Closes a shard that has reached its byte budget, so the next record starts a new part.
+     *
+     * <p>Deliberately not "split into equally sized files": the check happens after a whole record, so
+     * a part may overshoot by one record. That is the right trade — a file boundary must never fall
+     * inside a record, and a consumer reading a part has to see whole records.
+     */
+    private void maybeRoll(Shard shard) {
+        if (!shard.shouldRoll()) {
+            return;
+        }
+        String logical = shard.logicalKey();
+        shards.remove(shard.key());
+        closedShards.add(shard);
+        // The count is derived from the number of parts already finished for this output, so a
+        // roll-over cannot produce a duplicate part number even if the map is touched elsewhere.
+        parts.merge(logical, 1, Integer::sum);
+        try {
+            shard.close();
+        } catch (IOException e) {
+            failures.add(new Failure(shard.kind(), shard.namespace(), e));
+        }
+    }
+
     private Set<String> requestedFormats() {
         return config.formats();
     }
 
     private Shard shard(String namespace, ElementKind kind, String format, String target) {
-        String key = target.isEmpty()
+        String logical = target.isEmpty()
                 ? namespace + '|' + kind.plural() + '|' + format
                 : namespace + '|' + kind.plural() + '|' + format + "|target:" + target;
+        int part = parts.getOrDefault(logical, 0);
+        // The key carries the part, so a rolled-over shard is a different shard while the logical key
+        // stays the same. That keeps "what part are we on" separate from "what is this shard".
+        String key = part == 0 ? logical : logical + "|part:" + part;
         Shard existing = shards.get(key);
         if (existing != null) {
             return existing;
@@ -413,7 +496,7 @@ public final class Exporter implements ElementSink {
         }
         Writer writer = WriterFactory.create(format, config, pool);
         Shard created = new Shard(namespace, kind, format, target, dir, writer, pool,
-                watermarkBytes());
+                watermarkBytes(), config.dryRun(), config.maxFileBytes(), part);
         shards.put(key, created);
         return created;
     }

@@ -69,6 +69,11 @@ public final class ExportConfig {
     private final boolean analysisSeparate;
     private final boolean packagePerKind;
     private final boolean quiet;
+    private final FieldMask fields;
+    private final boolean dryRun;
+    private final Set<String> includeTags;
+    private final Set<String> excludeTags;
+    private final long maxFileBytes;
     private final boolean datapacks;
     private final String globalDatapacks;
     private final String globalDatapackDir;
@@ -98,6 +103,11 @@ public final class ExportConfig {
         this.analysisSeparate = b.analysisSeparate;
         this.packagePerKind = b.packagePerKind;
         this.quiet = b.quiet;
+        this.fields = b.fields;
+        this.dryRun = b.dryRun;
+        this.includeTags = Collections.unmodifiableSet(new LinkedHashSet<>(b.includeTags));
+        this.excludeTags = Collections.unmodifiableSet(new LinkedHashSet<>(b.excludeTags));
+        this.maxFileBytes = b.maxFileBytes;
         this.datapacks = b.datapacks;
         this.globalDatapacks = b.globalDatapacks;
         this.globalDatapackDir = b.globalDatapackDir;
@@ -214,6 +224,78 @@ public final class ExportConfig {
         return quiet;
     }
 
+    /** Which fields records should carry. */
+    public FieldMask fields() {
+        return fields;
+    }
+
+    /**
+     * Whether to plan without writing.
+     *
+     * <p>A scripted caller can then find out what a configuration would produce — how many files, how
+     * many records, where — without touching the filesystem. Useful enough to be worth its own switch
+     * rather than something achieved by exporting to a temporary directory and deleting it.
+     */
+    public boolean dryRun() {
+        return dryRun;
+    }
+
+    /** Only elements carrying one of these tags. Empty means no tag restriction. */
+    public Set<String> includeTags() {
+        return includeTags;
+    }
+
+    /** Elements carrying any of these tags are skipped. */
+    public Set<String> excludeTags() {
+        return excludeTags;
+    }
+
+    /**
+     * Split a shard once it exceeds this many bytes. Zero means split by record count instead.
+     *
+     * <p>By bytes rather than by count because a consumer cares about file size, and records vary
+     * enormously: a thousand blocks and a thousand recipes are not comparable amounts of data.
+     */
+    public long maxFileBytes() {
+        return maxFileBytes;
+    }
+
+    /** Whether a tag filter is in effect. */
+    public boolean hasTagFilter() {
+        return !includeTags.isEmpty() || !excludeTags.isEmpty();
+    }
+
+    /**
+     * Whether an element carrying these tags passes the filter.
+     *
+     * <p>An element with no tags is excluded when an include filter is set — it cannot be shown to
+     * carry one — but passes an exclude-only filter, since there is nothing to exclude it for.
+     */
+    public boolean acceptsTags(String[] tags) {
+        if (!hasTagFilter()) {
+            return true;
+        }
+        if (tags != null) {
+            for (String tag : tags) {
+                if (excludeTags.contains(tag)) {
+                    return false;
+                }
+            }
+        }
+        if (includeTags.isEmpty()) {
+            return true;
+        }
+        if (tags == null) {
+            return false;
+        }
+        for (String tag : tags) {
+            if (includeTags.contains(tag)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Whether datapack-defined flows, targets and strategies are read at all.
      *
@@ -321,6 +403,11 @@ public final class ExportConfig {
         b.analysisSeparate = analysisSeparate;
         b.packagePerKind = packagePerKind;
         b.quiet = quiet;
+        b.fields = fields;
+        b.dryRun = dryRun;
+        b.includeTags = new LinkedHashSet<>(includeTags);
+        b.excludeTags = new LinkedHashSet<>(excludeTags);
+        b.maxFileBytes = maxFileBytes;
         b.datapacks = datapacks;
         b.globalDatapacks = globalDatapacks;
         b.globalDatapackDir = globalDatapackDir;
@@ -385,6 +472,11 @@ public final class ExportConfig {
         private boolean analysisSeparate = true;
         private boolean packagePerKind = true;
         private boolean quiet = false;
+        private FieldMask fields = FieldMask.all();
+        private boolean dryRun = false;
+        private Set<String> includeTags = new LinkedHashSet<>();
+        private Set<String> excludeTags = new LinkedHashSet<>();
+        private long maxFileBytes = 0;
         private boolean datapacks = true;
         private String globalDatapacks = "auto";
         private String globalDatapackDir = null;
@@ -493,6 +585,31 @@ public final class ExportConfig {
 
         public Builder quiet(boolean on) {
             this.quiet = on;
+            return this;
+        }
+
+        public Builder fields(FieldMask mask) {
+            this.fields = mask == null ? FieldMask.all() : mask;
+            return this;
+        }
+
+        public Builder dryRun(boolean on) {
+            this.dryRun = on;
+            return this;
+        }
+
+        public Builder includeTag(String tag) {
+            this.includeTags.add(tag);
+            return this;
+        }
+
+        public Builder excludeTag(String tag) {
+            this.excludeTags.add(tag);
+            return this;
+        }
+
+        public Builder maxFileBytes(long bytes) {
+            this.maxFileBytes = Math.max(0, bytes);
             return this;
         }
 

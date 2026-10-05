@@ -192,10 +192,79 @@ The file is **partial**: name only the keys you want to change. The layering is
 /uee config show|path|save|template|reload
 ```
 
-一键导出的默认行为：**`json` 格式 + n 个数据包 + 1 个分析包**（n = 所选数据类目数）。
+### 短命令：一条就够，且默认即最优 / The short form: one command, and the default is the best choice
 
-The one-key default is **`json`, n data packages, and one analysis package** (n being the number of
-data categories selected).
+`/uee` 不带任何参数就可用。默认不是"尽量少"，而是**针对主要用途完整且恰好**：
+
+`/uee` with no arguments is all you need. The default is not "as little as possible" but **complete
+and no more for the dominant purpose**:
+
+| 方面 / Aspect | 默认 / Default | 为什么 / Why |
+| --- | --- | --- |
+| 格式 / format | `json` | 通用可读，无需解释 / readable anywhere |
+| 类目 / categories | 9 个：mods items blocks entities recipes effects fluids enchantments creative_tabs | 百科页要引用的注册表全在里面，跑一次就够 / everything a wiki entry references |
+| 分析 / analysis | 开，**独立成包** | n 个数据包 + **1 个**分析包；数据那半可单独交给下游 / n data packages plus one analysis bundle |
+| 不导 / left out | biomes dimensions structures sounds particles attributes damage_types | 大、少改、物品页用不到；一个词可加回 / large, rarely changed, one token away |
+
+★ **默认类目是纯数据类目**：它不跨"搜集/分析"的分界，所以 `kinds = ["common"]` 只有一种含义——
+否则和 `analyze = false` 一起写时会变得含混。
+
+★ **The default category set is pure collected content** — it does not straddle the
+collection/analysis boundary, so `kinds = ["common"]` means one thing even beside `analyze = false`.
+
+★ 导出**一律异步**（见上），所以这条短命令放进函数也不会卡 tick。
+
+★ Exports are **always asynchronous** (above), so even the short form is safe in a function.
+
+### 长命令：能配的都要能配 / The long form: everything is settable
+
+每个设置**既是配置文件的一个键，也是命令的一个动词** —— 两个接口是同一个接口。
+
+Every setting is **both a config key and a command verb** — the two interfaces are one interface.
+
+| 能配什么 / What | 命令 / Command | 配置文件键 / Key |
+| --- | --- | --- |
+| 导哪些类目 / categories | `/uee export items,blocks` | `kinds` |
+| 哪些格式 / formats | `/uee formats json,wiki` | `formats` |
+| 输出到哪 / where | `/uee set output <dir>` | `output` |
+| 记录带哪些字段 / which fields | `/uee set fields tags name`<br>`/uee set exclude-fields tags` | `fields` / `exclude_fields` |
+| 按标签筛 / by tag | `/uee set tags c:gems`<br>`/uee set skip-tags c:dirt` | `include_tags` / `exclude_tags` |
+| 按命名空间/模组筛 / by ns or mod | `/uee set namespaces` · `skip-namespaces` · `skip-mods` | `include_namespaces` … |
+| 每片多少条 / shard size | `/uee set shards 20000` | `shard_size` |
+| 每文件多少 MB / file size | `/uee set max-file-mb 8` | `max_file_mb` |
+| 要不要分析 / analysis | `/uee set dry-run` 等 | `analyze` · `analysis_separate` |
+| 安静 / quiet | `/uee set quiet` · `noisy` | `quiet` |
+| 试运行 / dry run | `/uee set dry-run` | `dry_run` |
+| 布局 / layout | — | `package_per_kind` · `shard_by_namespace` |
+| 数据包与全局包 / datapacks | `/uee globalpack` | `datapacks` · `global_datapacks` |
+
+`/uee set` 不带参数会列出全部可设项，所以长形式不用查文档也能发现。
+
+`/uee set` with no arguments lists everything settable, so the long form is discoverable without the
+documentation.
+
+**会话内生效**：`/uee set` 的设置作用于本会话之后的所有运行，不改动配置文件；
+`/uee config save` 才写下来——一个显式动作，因为偷偷改配置会让"我现在到底在跑什么"变得无法回答。
+
+**Session-scoped**: `/uee set` applies to later runs without touching the config file;
+`/uee config save` is what writes it down — an explicit step, because a command that silently edited
+the config would make "what am I actually running" unanswerable.
+
+**三条边界**（写出来，不留含糊）：
+
+**Three boundaries**, stated rather than left ambiguous:
+
+* **不提供"按名称排序"**。排序要缓冲整个分片的记录，与"峰值内存与包大小无关"冲突；而注册表顺序
+  本身是确定的，输出**已经可复现**。
+* **字段投影不作用于百科投影与 zd**：它们的字段名是对外契约与二进制模式，少一个字段就是另一种格式。
+* **按字节切分时，整条记录不跨文件** —— 所以一个分片可能超出预算一条记录。读到半条记录比略大一点更糟。
+
+* **No "sort by name"**: ordering would require buffering a whole shard, contradicting the bounded
+  memory guarantee; the registry's own order is deterministic, so output is already reproducible.
+* **Field projection does not apply to the wiki projection or to zd**: their field names are a
+  contract and a binary schema, so dropping one is not a smaller document but a different format.
+* **A record never spans two files**, so a part may overshoot the budget by one record. Reading half a
+  record is worse than a slightly larger file.
 
 ### 从 MC 函数调用 / Called from an MC function
 

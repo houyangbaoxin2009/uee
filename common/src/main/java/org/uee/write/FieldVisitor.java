@@ -26,6 +26,19 @@ public interface FieldVisitor {
 
     void bool(String key, boolean value);
 
+    /**
+     * Whether a field should be written at all.
+     *
+     * <p>Asked through the visitor rather than read from the configuration by the caller, so the
+     * expansion code stays free of configuration and a writer that ignores projection — the wiki
+     * projection, whose field names are a contract with a third party — can say so once.
+     *
+     * <p>Identity fields always answer true; see {@link org.uee.config.FieldMask}.
+     */
+    default boolean has(String field) {
+        return true;
+    }
+
     /** A list-of-strings field. An empty array is still emitted, so consumers see the key. */
     void array(String key, String[] values);
 

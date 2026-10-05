@@ -35,10 +35,28 @@ public final class Tokens {
     /**
      * The categories the one-key default exports.
      *
-     * <p>Chosen to be the set that makes a wiki-shaped export useful without being everything: the
-     * registries a wiki entry is built from, plus the datapack content that describes how they are
-     * obtained. Property-style categories (biomes, dimensions, structures) are left out because they
-     * are large, rarely edited, and easy to ask for explicitly.
+     * <h2>What "optimal" means here</h2>
+     *
+     * <p>Not "as little as possible". The one-key command is meant to be the right answer most of the
+     * time, so the set has to be <em>complete for the dominant purpose</em> — someone running
+     * {@code /uee} and handing the output to a wiki importer should not then discover a category they
+     * needed and have to run it again. Being slightly generous costs a few extra files; being short
+     * costs a second run.
+     *
+     * <p>So this is every registry a wiki entry is built from: the things themselves, what they are
+     * made of, and how they are obtained. A page for an item routinely references its block form, the
+     * fluid it holds, the recipe that makes it and the enchantments it can carry, so all of those are
+     * in.
+     *
+     * <p>Left out are the <em>property-style</em> categories — biomes, dimensions, structures, sounds,
+     * particles, attributes, damage types. They are large, they change rarely, and no wiki page for an
+     * item needs them; asking for one is a token away.
+     *
+     * <p><b>Pure data categories only.</b> This set deliberately excludes the analysis categories:
+     * {@code kinds = ["common"]} must mean one thing, and a set that spanned both halves would be
+     * ambiguous the moment {@code analyze = false} was set alongside it. The analysis contributes its
+     * own categories by being on by default, which is a separate decision from which content to
+     * collect.
      */
     private static final Set<ElementKind> COMMON_KINDS = EnumSet.of(
             ElementKind.MOD,
@@ -47,8 +65,9 @@ public final class Tokens {
             ElementKind.ENTITY,
             ElementKind.RECIPE,
             ElementKind.EFFECT,
-            ElementKind.NAMESPACE,
-            ElementKind.MIXIN);
+            ElementKind.FLUID,
+            ElementKind.ENCHANTMENT,
+            ElementKind.CREATIVE_TAB);
 
     /** Categories produced by the analysis rather than by a registry walk. */
     private static final Set<ElementKind> ANALYSIS_KINDS = EnumSet.of(
