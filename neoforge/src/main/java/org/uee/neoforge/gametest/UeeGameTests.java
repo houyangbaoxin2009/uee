@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -15,6 +16,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import org.uee.Uee;
 import org.uee.config.ExportConfig;
 import org.uee.config.WikiOptions;
+import org.uee.mc.AbstractMinecraftAdapter;
 import org.uee.model.BlockElement;
 import org.uee.model.DebugSection;
 import org.uee.model.Dependency;
@@ -266,6 +268,60 @@ public final class UeeGameTests {
                 "the failure count differs between thread counts: " + single.failures.size() + " vs "
                         + many.failures.size());
 
+        helper.succeed();
+    }
+
+    /**
+     * Collection reads icons from the store rather than rendering them.
+     *
+     * <p>This is the assertion that the data phase does what the design says it does. Rendering needs a
+     * client and this is a dedicated server, so a collection that rendered would either fail here or --
+     * worse -- quietly produce nothing and look like an export with no icons. Planting an icon in a store
+     * and checking it comes back out proves the read path, and the absence of any rendering in the data
+     * phase is what makes it work on a server at all.
+     */
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void collectionReadsIconsRatherThanRenderingThem(GameTestHelper helper) {
+        AbstractMinecraftAdapter adapter = (AbstractMinecraftAdapter) Uee.adapter();
+        String itemId = "minecraft:stone";
+        byte[] marker = {1, 2, 3, 4, 5};
+
+        try {
+            Path root = Files.createTempDirectory("uee-icons");
+            org.uee.icon.IconStore store = new org.uee.icon.IconStore(root,
+                    Map.of("item", new int[] {128, 32}));
+            store.put("item", itemId, 128, marker);
+            store.put("item", itemId, 32, marker);
+            adapter.bindIcons(store);
+
+            RecordingSink sink = new RecordingSink();
+            ExportConfig config = ExportConfig.builder().kinds(ElementKind.ITEM).build();
+            adapter.collectRegistries(config, EnumSet.of(ElementKind.ITEM), sink);
+
+            ItemElement stone = sink.items.stream()
+                    .filter(e -> e.registryName().equals(itemId))
+                    .findFirst().orElse(null);
+            helper.assertTrue(stone != null, "the test item was not collected at all");
+            helper.assertTrue(stone.iconLarge() != null && stone.iconLarge().length == marker.length,
+                    "the icon in the store did not reach the record, so collection is not reading it");
+            helper.assertTrue(stone.iconSmall() != null,
+                    "only one of the two configured sizes reached the record");
+
+            // An item with no icon in the store must come out with no icon rather than failing: the
+            // store is not expected to be complete, which is what makes a resumed run usable.
+            ItemElement other = sink.items.stream()
+                    .filter(e -> !e.registryName().equals(itemId))
+                    .findFirst().orElse(null);
+            helper.assertTrue(other == null || other.iconLarge() == null,
+                    "an item with no stored icon still came out with one");
+            helper.assertTrue(sink.failures.isEmpty(),
+                    "a missing icon was reported as a failure: "
+                            + (sink.failures.isEmpty() ? "" : sink.failures.get(0)));
+        } catch (IOException e) {
+            helper.fail("could not prepare the icon store: " + e);
+        } finally {
+            adapter.bindIcons(null);
+        }
         helper.succeed();
     }
 

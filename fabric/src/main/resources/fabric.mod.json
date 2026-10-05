@@ -16,6 +16,9 @@
   "entrypoints": {
     "main": [
       "org.uee.fabric.UeeFabric"
+    ],
+    "client": [
+      "org.uee.fabric.UeeFabricClient"
     ]
   },
   "depends": {

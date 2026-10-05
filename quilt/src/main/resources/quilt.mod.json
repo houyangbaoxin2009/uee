@@ -20,6 +20,9 @@
     "entrypoints": {
       "init": [
         "org.uee.quilt.UeeQuilt"
+      ],
+      "client_init": [
+        "org.uee.quilt.UeeQuiltClient"
       ]
     },
     "depends": [

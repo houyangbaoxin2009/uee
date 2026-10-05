@@ -236,11 +236,28 @@ tasks.register('lootTableTest', JavaExec) {
     args = [layout.buildDirectory.dir('loot-table-test').get().asFile.absolutePath]
 }
 
+/**
+ * Runs the icon phase's checks: the store, the batching, and the PNG encoder.
+ *
+ * <p>The encoder is checked by handing its output to the JDK's own image reader, so "it is a PNG" is
+ * established by something other than the code that wrote it. The rendering is not checked anywhere --
+ * there is no client in the test environment -- and the phase is deliberately shaped so that everything
+ * except the render call can be.
+ */
+tasks.register('iconTest', JavaExec) {
+    description = 'Runs the icon store, phase and png encoder checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.IconTest'
+    args = [layout.buildDirectory.dir('icon-test').get().asFile.absolutePath]
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
     group = 'verification'
     dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest',
             'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest', 'scaleTest',
-            'tagTest', 'lootTableTest'
+            'tagTest', 'lootTableTest', 'iconTest'
 }

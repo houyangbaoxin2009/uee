@@ -234,6 +234,24 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
     /** Guards the one-time construction of {@link #translator}. See {@link #translator()}. */
     private final Object translatorLock = new Object();
 
+    /**
+     * Sizes the exported icon sizes are named by, shared so the phase and the reader cannot disagree.
+     *
+     * <p>An item gets a large and a small icon; an entity only a large one. These are the sizes the icon
+     * store is keyed by, so a change here has to reach both the phase that renders and the collection
+     * that reads, which is why they are constants rather than literals at each use.
+     */
+    protected static final int ICON_LARGE = 128;
+    protected static final int ICON_SMALL = 32;
+
+    /**
+     * Where rendered icons are read from, bound by whoever ran the icon phase.
+     *
+     * <p>Null when icons were not requested or the phase has not run, which is the default and by far the
+     * common case: icons are opt-in and cost a separate client-side pass.
+     */
+    private volatile org.uee.icon.IconStore icons;
+
     /** Container inspections, filled on first use. */
     private final Map<String, ModContainerScanner.ContainerInfo> containers = new HashMap<>();
     /** Mixin configs read from those containers, filled on first use. */
@@ -300,12 +318,11 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         ItemStack stack = new ItemStack(item);
         String key = item.getDescriptionId();
         boolean blockItem = item instanceof BlockItem;
-        byte[] large = null;
-        byte[] small = null;
-        if (config.icons()) {
-            large = renderItemIcon(stack, 128);
-            small = renderItemIcon(stack, 32);
-        }
+        // Read, not rendered. Rendering needs the client's render thread and the game loop, so it happens
+        // in the icon phase, which runs before this one; collecting here would put rendering back inside
+        // the data phase, which is the one thing that phase is defined not to do.
+        byte[] large = iconOf(ElementKind.ITEM, id.toString(), ICON_LARGE);
+        byte[] small = iconOf(ElementKind.ITEM, id.toString(), ICON_SMALL);
         return new ItemElement(
                 id.toString(),
                 id.getNamespace(),
@@ -389,9 +406,10 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
                     translator().translate(key, Translator.ZH_CN),
                     translator().translate(key, Translator.EN_US),
                     category == null ? null : category.getName(),
-                    // Safe to call here only because `parallelism` refuses to use workers when icons are
-                    // on: the render pipeline is not thread-safe, and this is where it would be reached.
-                    config.icons() ? renderEntityIcon(type, 128) : null));
+                    // Read from the icon store, not rendered: see the note in `buildItem`. This is why
+                    // `parallelism` no longer has to be conservative about icons -- collection no longer
+                    // goes anywhere near the render pipeline.
+                    iconOf(ElementKind.ENTITY, id.toString(), ICON_LARGE)));
         });
     }
 
@@ -490,6 +508,44 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         return current;
     }
 
+    /**
+     * Binds the icons to read while collecting, or {@code null} to collect without any.
+     *
+     * <p>Bound rather than looked up so collection has no opinion about where icons come from. The icon
+     * phase decides that, and a run without icons never touches the store at all.
+     */
+    public void bindIcons(org.uee.icon.IconStore store) {
+        this.icons = store;
+    }
+
+    /** The icons bound for this run, or {@code null}. */
+    protected org.uee.icon.IconStore icons() {
+        return icons;
+    }
+
+    /**
+     * One rendered icon, or {@code null} when there is none.
+     *
+     * <p>Returns null rather than throwing for every reason an icon can be missing — no store bound, the
+     * element was not rendered, the file was removed — because a missing icon is a normal state and not
+     * an error: the record is still perfectly usable, and a reader treats "no icon" as "look it up
+     * yourself". An exception here would turn a cosmetic gap into a failed export.
+     */
+    protected byte[] iconOf(ElementKind kind, String id, int size) {
+        org.uee.icon.IconStore store = icons;
+        if (store == null || !store.renders(kind.singular())) {
+            return null;
+        }
+        try {
+            return store.get(kind.singular(), id, size);
+        } catch (Throwable t) {
+            // Reported once per affected element rather than swallowed silently, since a store that
+            // cannot be read would otherwise produce an export with every icon quietly missing.
+            org.uee.Uee.reportFailure("icon for " + kind.singular() + " " + id + " could not be read", t);
+            return null;
+        }
+    }
+
     // ---------------------------------------------------------------- datapack content
 
     /**
@@ -554,23 +610,23 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
     }
 
     /**
-     * How many workers collection may use, which is often not what the configuration asked for.
+     * How many workers collection may use, which is not always what the configuration asked for.
      *
-     * <h2>Two conditions override the setting</h2>
+     * <p>The adapter's own declaration overrides the setting. {@code registry_frozen} says the registries
+     * are frozen and safe to read off the thread that owns them, and an adapter that has not declared it
+     * is saying the opposite — so running its collection across workers would contradict the promise it
+     * made, and a fault that only appears under load is the hardest kind to trace back to a decision made
+     * here. The same declaration already gates running the whole export off the server thread, so this
+     * reuses a promise the adapter has already made rather than inventing a second one.
      *
-     * <p>The first is the adapter's own declaration. {@code registry_frozen} says the registries are
-     * frozen and safe to read off the thread that owns them, and an adapter that has not declared it is
-     * saying the opposite — so running its collection across workers would contradict the promise it
-     * made, and a fault that only appears under load is the hardest kind to trace back to a decision
-     * made here. The same declaration already gates running the whole export off the server thread, so
-     * this reuses a promise the adapter has already made rather than inventing a second one.
+     * <p>Configuration can therefore make collection more conservative, but never less: there is no
+     * setting that reads registries from workers on an adapter that said not to.
      *
-     * <p>The second is icon rendering. Rendering goes through the client's render pipeline, which is not
-     * thread-safe and cannot be made so from here. Icons are not implemented yet — the render hooks
-     * return null — so this guards a path that does not exist rather than one that is broken. It is
-     * written now anyway because the trap would be invisible later: an export with icons enabled would
-     * start corrupting render state intermittently, and nothing about the icon code would be at fault.
-     * Icons are off by default and cost a single-threaded pass only when they are on.
+     * <p>There used to be a second condition here, disabling workers when icons were enabled, because
+     * rendering went through the client's render thread and collection called it inline. Collection no
+     * longer renders — icons come from the icon phase, which is where rendering belongs — so the
+     * condition became unnecessary rather than wrong. Removing it is the point of separating the phases:
+     * the constraint disappeared instead of having to be remembered.
      */
     private int parallelism(ExportConfig config) {
         if (config.threads() <= 1) {
@@ -579,7 +635,7 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         if (!supports(CAP_REGISTRY_FROZEN)) {
             return 1;
         }
-        return config.icons() ? 1 : config.threads();
+        return config.threads();
     }
 
     /**
