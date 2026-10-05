@@ -1,5 +1,6 @@
 package org.uee.quilt;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -61,9 +62,17 @@ public final class QuiltAdapter extends AbstractMinecraftAdapter {
         return QuiltLoader.getGameDir().toString();
     }
 
+    /**
+     * Whether this is a client.
+     *
+     * <p>Asked of Fabric's loader, because Quilt has no environment accessor of its own in this
+     * version: it runs Fabric mods natively, so the Fabric entry points and loader are the interfaces
+     * a mod actually implements and queries here.
+     */
     @Override
     protected boolean isClient() {
-        return QuiltLoader.getEnvironmentType() == org.quiltmc.loader.api.EnvironmentType.CLIENT;
+        return net.fabricmc.loader.api.FabricLoader.getInstance().getEnvironmentType()
+                == net.fabricmc.api.EnvType.CLIENT;
     }
 
     @Override
@@ -95,9 +104,9 @@ public final class QuiltAdapter extends AbstractMinecraftAdapter {
                     "quilt",
                     mcVersion,
                     meta.contributors().stream()
-                            .map(c -> c.name() == null ? c.id() : c.name())
+                            .map(QuiltAdapter::contributorName)
                             .toArray(String[]::new),
-                    meta.license().isEmpty() ? null : String.join(",", meta.license()),
+                    licenseNames(meta),
                     meta.description(),
                     descriptor != null ? descriptor.dependencies() : new Dependency[0],
                     descriptor != null ? descriptor.providers() : new String[0],
@@ -107,10 +116,39 @@ public final class QuiltAdapter extends AbstractMinecraftAdapter {
         return out;
     }
 
+    /**
+     * A contributor's display name.
+     *
+     * <p>Quilt's contributor type carries a name and a set of roles and has no id, so the name is the
+     * only thing to fall back on — and a contributor without one is skipped rather than recorded as an
+     * empty string, which would look like a mod that declared a blank author.
+     */
+    private static String contributorName(org.quiltmc.loader.api.ModContributor contributor) {
+        String name = contributor.name();
+        return name == null || name.isBlank() ? null : name;
+    }
+
+    /** A mod's declared licenses, joined, or {@code null} when it declared none. */
+    private static String licenseNames(ModMetadata meta) {
+        if (meta.licenses().isEmpty()) {
+            return null;
+        }
+        return meta.licenses().stream()
+                .map(org.quiltmc.loader.api.ModLicense::name)
+                .filter(name -> name != null && !name.isBlank())
+                .collect(java.util.stream.Collectors.joining(","));
+    }
+
+    /**
+     * The file a mod was loaded from.
+     *
+     * <p>{@code rootPath()} is the mod's root, which for a jar mod is the jar itself. Read through a
+     * container that may throw, because a mod whose source cannot be reached is still a mod and the
+     * export must continue without it.
+     */
     private Path containerFile(ModContainer container) {
         try {
-            List<Path> paths = container.rootPaths();
-            return paths.isEmpty() ? null : paths.get(0);
+            return container.rootPath();
         } catch (Throwable t) {
             return null;
         }

@@ -198,7 +198,7 @@ public final class UeeCommand {
                                                 () -> SURFACE.setShards(
                                                         com.mojang.brigadier.arguments
                                                                 .IntegerArgumentType
-                                                                .getInteger(ctx, "records")))))
+                                                                .getInteger(ctx, "records"))))))
                         .then(Commands.literal("max-file-mb")
                                 .then(Commands.argument("mb",
                                                 com.mojang.brigadier.arguments.IntegerArgumentType
@@ -207,7 +207,7 @@ public final class UeeCommand {
                                                 () -> SURFACE.setMaxFileMb(
                                                         com.mojang.brigadier.arguments
                                                                 .IntegerArgumentType
-                                                                .getInteger(ctx, "mb")))))
+                                                                .getInteger(ctx, "mb"))))))
                         .then(Commands.literal("output")
                                 .then(Commands.argument("dir", StringArgumentType.greedyString())
                                         .executes(ctx -> applySetting(ctx.getSource(),
@@ -575,7 +575,9 @@ public final class UeeCommand {
     private static Component link(CommandSourceStack source, Path path) {
         String text = path.toAbsolutePath().toString();
         boolean interactive = source.getEntity() != null;
-        Component base = Component.literal(text);
+        // MutableComponent, not Component: the interface has no withStyle, and literal() already
+        // returns something that does.
+        net.minecraft.network.chat.MutableComponent base = Component.literal(text);
         if (!interactive) {
             return base;
         }
@@ -866,7 +868,7 @@ public final class UeeCommand {
         source.sendSuccess(() -> Component.literal(
                 "analysis strategies / 分析策略 (" + catalog.strategies().size() + ")"), false);
         for (StrategyDefinition strategy : catalog.strategies().values()) {
-            source.sendSuccess(() -> Component.literal("  " + strategy.qualifiedId()
+            source.sendSuccess(() -> Component.literal("  " + qualified(strategy)
                     + "  (" + strategy.rules().size() + " rules"
                     + (strategy.needsCollection() ? ", needs collection" : "") + ")"), false);
             if (strategy.description() != null) {
@@ -874,6 +876,16 @@ public final class UeeCommand {
             }
         }
         return catalog.strategies().size();
+    }
+
+    /**
+     * A strategy's fully qualified id.
+     *
+     * <p>Composed here rather than asked of the strategy, which carries the two parts separately.
+     */
+    private static String qualified(StrategyDefinition strategy) {
+        return strategy.namespace() == null || strategy.namespace().isEmpty()
+                ? strategy.id() : strategy.namespace() + ":" + strategy.id();
     }
 
     private static int listDatapacks(CommandSourceStack source) {
@@ -1031,7 +1043,7 @@ public final class UeeCommand {
                 }
                 return 0;
             }
-            source.sendSuccess(() -> Component.literal(Uee.NAME + ": reloaded ").append(link(file)),
+            source.sendSuccess(() -> Component.literal(Uee.NAME + ": reloaded ").append(link(source, file)),
                     false);
             for (String warning : r.warnings()) {
                 source.sendSuccess(() -> Component.literal("  warning: " + warning), false);

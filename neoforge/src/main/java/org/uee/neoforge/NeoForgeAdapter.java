@@ -1,5 +1,6 @@
 package org.uee.neoforge;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -91,8 +92,8 @@ public final class NeoForgeAdapter extends AbstractMinecraftAdapter {
                     info.getModId(),
                     "neoforge",
                     mcVersion,
-                    info.getAuthors().map(a -> a.split(",")).orElse(new String[0]),
-                    info.getLicense().orElse(null),
+                    authorsOf(info),
+                    licenseOf(info),
                     info.getDescription(),
                     dependenciesOf(info),
                     new String[0],
@@ -105,12 +106,11 @@ public final class NeoForgeAdapter extends AbstractMinecraftAdapter {
     /**
      * Maps declared dependencies to their kinds.
      *
-     * <p>{@code isMandatory()} is the reliable distinction this loader exposes, so an entry is either
-     * required or optional. A declared incompatibility is not distinguished here, which is why the
-     * analyzer's incompatibility checks stay silent on this loader rather than guessing.
+     * <p>The declared type is used directly, so a declared incompatibility is reported as one rather
+     * than being flattened into "optional" and lost.
      */
     private static Dependency[] dependenciesOf(IModInfo info) {
-        List<IModInfo.ModVersion> versions = info.getDependencies();
+        List<? extends IModInfo.ModVersion> versions = info.getDependencies();
         if (versions == null || versions.isEmpty()) {
             return new Dependency[0];
         }
@@ -119,9 +119,55 @@ public final class NeoForgeAdapter extends AbstractMinecraftAdapter {
         for (IModInfo.ModVersion dep : versions) {
             out[n++] = new Dependency(dep.getModId(),
                     dep.getVersionRange() == null ? null : dep.getVersionRange().toString(),
-                    dep.isMandatory() ? Dependency.Kind.REQUIRED : Dependency.Kind.OPTIONAL);
+                    kindOf(dep.getType()));
         }
         return out;
+    }
+
+    /**
+     * Maps a declared dependency type onto ours.
+     *
+     * <p>{@code DISCOURAGED} is treated as optional: it is a warning about ordering rather than a
+     * requirement, and calling it required would make the dependency analysis report a missing mod
+     * that the game is perfectly happy without.
+     */
+    private static Dependency.Kind kindOf(IModInfo.DependencyType type) {
+        if (type == null) {
+            return Dependency.Kind.OPTIONAL;
+        }
+        return switch (type) {
+            case REQUIRED -> Dependency.Kind.REQUIRED;
+            case INCOMPATIBLE -> Dependency.Kind.INCOMPATIBLE;
+            default -> Dependency.Kind.OPTIONAL;
+        };
+    }
+
+    /**
+     * A mod's authors.
+     *
+     * <p>Read from the mod's configuration rather than an accessor, because {@code IModInfo} does not
+     * expose one — the metadata lives in the mod file's own declaration, and the config interface is
+     * how it is reached.
+     */
+    private static String[] authorsOf(IModInfo info) {
+        return configString(info, "authors")
+                .map(authors -> authors.split("\\s*,\\s*"))
+                .orElse(new String[0]);
+    }
+
+    /** A mod's declared license, or {@code null}. */
+    private static String licenseOf(IModInfo info) {
+        return configString(info, "license").orElse(null);
+    }
+
+    /**
+     * One string from a mod's metadata.
+     *
+     * <p>{@code getConfigElement} is variadic because the value may be nested in the metadata tree;
+     * a single key is the flat case.
+     */
+    private static java.util.Optional<String> configString(IModInfo info, String key) {
+        return info.getConfig().getConfigElement(key);
     }
 
     /** Resolves a mod's container file, or {@code null} when it cannot be located. */

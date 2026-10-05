@@ -1,5 +1,8 @@
 plugins {
-    id 'org.quiltmc.loom' version '1.7-SNAPSHOT'
+    // A concrete release, not a snapshot: Quilt's repository does not publish the
+    // `1.7-SNAPSHOT` marker that Fabric's does, so the snapshot coordinate simply does not
+    // resolve there. 1.7.4 is what Fabric's own Loom resolved to, so the two stay aligned.
+    id 'org.quiltmc.loom' version '1.7.4'
 }
 
 base {

@@ -27,8 +27,18 @@ public final class GlobalPackRegistration {
     private GlobalPackRegistration() {
     }
 
-    /** What a loader should register, and why. */
-    public record Decision(List<Path> packs, GlobalPackPolicy policy, List<Finding> findings) {
+    /**
+     * What a loader should register, and why.
+     *
+     * @param packs the packs found, for a loader that registers them individually
+     * @param directory the directory they came from, for a loader that hands the directory to the
+     *     game's own folder scanner — which is the better option where it exists, because it reuses
+     *     vanilla's discovery and metadata handling rather than reimplementing them
+     * @param policy the decision that produced this
+     * @param findings what to tell the user
+     */
+    public record Decision(List<Path> packs, Path directory, GlobalPackPolicy policy,
+            List<Finding> findings) {
 
         public Decision {
             packs = List.copyOf(packs);
@@ -60,20 +70,30 @@ public final class GlobalPackRegistration {
         LoaderAdapter adapter = Uee.adapter();
         if (adapter == null) {
             // No loader has bound yet, so there is no game directory to resolve anything against.
-            return new Decision(List.of(), GlobalPackPolicy.decide(GlobalPackPolicy.Mode.OFF,
+            return new Decision(List.of(), null, GlobalPackPolicy.decide(GlobalPackPolicy.Mode.OFF,
                     List.of(), null, 0), List.of());
         }
         GlobalPackPolicy policy = Uee.globalPackPolicy(config);
         List<Finding> findings = new ArrayList<>(policy.findings());
         if (!policy.provide()) {
-            return new Decision(List.of(), policy, findings);
+            return new Decision(List.of(), globalDir(adapter), policy, findings);
         }
         List<Path> packs = packsToRegister(config, adapter);
+        Path directory = globalDir(adapter);
         if (packs.isEmpty() && policy.ourPackCount() == 0) {
             // The empty-directory note is already in the policy's findings; nothing more to add.
-            return new Decision(List.of(), policy, findings);
+            return new Decision(List.of(), directory, policy, findings);
         }
-        return new Decision(packs, policy, findings);
+        return new Decision(packs, directory, policy, findings);
+    }
+
+    /** The directory the packs came from, or {@code null} when there is none. */
+    private static Path globalDir(LoaderAdapter adapter) {
+        if (adapter == null) {
+            return null;
+        }
+        String gameDir = adapter.info().gameDirectory();
+        return Uee.globalDir(gameDir == null || gameDir.isEmpty() ? null : Path.of(gameDir), adapter);
     }
 
     /** The packs UEE would register, in a deterministic order. */

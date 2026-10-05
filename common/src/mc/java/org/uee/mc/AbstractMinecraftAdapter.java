@@ -215,7 +215,6 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
     /** Mixin configs read from those containers, filled on first use. */
     private final List<MixinConfig> mixins = new ArrayList<>();
     private boolean factsGathered;
-    }
 
     @Override
     public void collectDatapacks(ExportConfig config, Collection<ElementKind> wanted,
@@ -303,6 +302,20 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
 
     // ---------------------------------------------------------------- block collection
 
+    /**
+     * Collects blocks.
+     *
+     * <p>Three accessors used here are marked deprecated in this Minecraft version and have no
+     * replacement in it: the context-aware variants that supersede them
+     * ({@code getSoundType(LevelReader, BlockPos, Entity)} and friends) arrive in a later release. UEE
+     * also has no position to supply even if they existed, because an export runs over the whole
+     * registry rather than at a place in a world.
+     *
+     * <p>Suppressed deliberately rather than left to warn on every build: the deprecation is
+     * forward-looking, nothing here can act on it, and a warning nobody can clear is one everybody
+     * learns to ignore.
+     */
+    @SuppressWarnings("deprecation")
     private void collectBlocks(ExportConfig config, ElementSink sink) {
         Registry<Block> registry = BuiltInRegistries.BLOCK;
         for (ResourceLocation id : registry.keySet()) {
@@ -578,9 +591,17 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         return null;
     }
 
-    /** Kept for adapters that need a holder list from a dynamic registry. */
+    /**
+     * A holder list from a registry, widened to the interface type.
+     *
+     * <p>The element-by-element widening is required because generics are invariant: the registry
+     * hands back {@code Holder.Reference<T>}, which implements {@code Holder<T>}, but a
+     * {@code List<Reference<T>>} is not a {@code List<Holder<T>>}.
+     */
     protected static <T> List<Holder<T>> holders(Registry<T> registry) {
-        return registry.holders().toList();
+        List<Holder<T>> out = new ArrayList<>();
+        registry.holders().forEach(out::add);
+        return out;
     }
 
     /** Registry access used when a recipe's result needs resolving without a live server. */
