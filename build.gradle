@@ -219,11 +219,28 @@ tasks.register('tagTest', JavaExec) {
     args = [layout.buildDirectory.dir('tag-test').get().asFile.absolutePath]
 }
 
+/**
+ * Runs the loot-table checks, and the parallel skeleton's own properties.
+ *
+ * <p>Two things are checked here that a category test alone would miss: that the parser handles every
+ * entry shape the shipped data actually contains, and that running the collection across threads produces
+ * byte-identical output to running it on one. The second is the whole reason the parallelism is safe to
+ * enable.
+ */
+tasks.register('lootTableTest', JavaExec) {
+    description = 'Runs the loot-table parser and parallel-ordering checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.LootTableTest'
+    args = [layout.buildDirectory.dir('loot-table-test').get().asFile.absolutePath]
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
     group = 'verification'
     dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest',
             'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest', 'scaleTest',
-            'tagTest'
+            'tagTest', 'lootTableTest'
 }

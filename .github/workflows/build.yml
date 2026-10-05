@@ -51,6 +51,9 @@ jobs:
       - name: Run the tag-collection test
         run: ./gradlew tagTest
 
+      - name: Run the loot-table and parallel-ordering test
+        run: ./gradlew lootTableTest
+
   # Each loader builds separately because each needs its own patched game jar. `-x test` keeps the
   # core checks in the job above rather than repeating them four times.
   loaders:

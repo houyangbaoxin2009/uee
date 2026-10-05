@@ -25,6 +25,14 @@ public enum ElementKind {
      * is read from the same places as recipes and is filtered by the same rules.
      */
     TAG("tag", "tags"),
+    /**
+     * Loot tables — what a block, mob, chest or fishing rod produces.
+     *
+     * <p>Collected content, like tags: declared in data rather than registered, read from the same
+     * resource system, and filtered by the same rules. Its own category rather than part of a block's or
+     * entity's record because a table is referenced by many things at once and describes itself.
+     */
+    LOOT_TABLE("loot_table", "loot_tables"),
     /** Status effects (potion effects). */
     EFFECT("effect", "effects"),
     /** Fluids. */

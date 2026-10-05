@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.neoforged.neoforge.gametest.GameTestHolder;
@@ -147,6 +148,72 @@ public final class UeeGameTests {
                 .anyMatch(g -> g.startsWith("tag:") && g.contains("planks"));
         helper.assertTrue(foundAPlank,
                 "the vanilla planks tags are missing from a run over the vanilla datapacks");
+
+        helper.succeed();
+    }
+
+    /**
+     * Loot tables are collected from the loaded datapacks.
+     *
+     * <p>The core tests cover every entry shape without a game; what they cannot cover is the enumeration
+     * itself, which is a resource-manager call. The vanilla datapacks ship over a thousand tables, so this
+     * runs the real path on a real workload.
+     */
+    @GameTest(template = "empty", timeoutTicks = 600)
+    public static void lootTablesAreCollectedFromDatapacks(GameTestHelper helper) {
+        LoaderAdapter adapter = Uee.adapter();
+        RecordingSink sink = new RecordingSink();
+        ExportConfig config = ExportConfig.builder().kinds(ElementKind.LOOT_TABLE).build();
+        adapter.collectDatapacks(config, EnumSet.of(ElementKind.LOOT_TABLE), sink);
+
+        helper.assertTrue(sink.generics.size() > 100,
+                "only " + sink.generics.size() + " loot tables were collected; the vanilla datapacks"
+                        + " ship over a thousand, so the enumeration or the path convention is wrong");
+        helper.assertTrue(sink.failures.isEmpty(),
+                "loot table collection reported failures, first: "
+                        + (sink.failures.isEmpty() ? "" : sink.failures.get(0)));
+
+        boolean foundStone = sink.generics.stream()
+                .anyMatch(g -> g.startsWith("loot_table:") && g.endsWith("blocks/stone"));
+        helper.assertTrue(foundStone, "blocks/stone is missing from a run over the vanilla datapacks");
+
+        helper.succeed();
+    }
+
+    /**
+     * Datapack collection produces the same records on one thread and on several.
+     *
+     * <p>This is the assertion that makes the parallelism safe to leave switched on. The order of records
+     * is part of the output — the export is diffed across runs, and the resumable-write work depends on a
+     * shard's contents being a function of the pack alone — so a thread count that changed the order would
+     * silently make every comparison meaningless. The core test checks the skeleton's ordering in
+     * isolation; this checks that the real collection on real datapacks goes through it.
+     */
+    @GameTest(template = "empty", timeoutTicks = 600)
+    public static void datapackCollectionDoesNotDependOnThreadCount(GameTestHelper helper) {
+        LoaderAdapter adapter = Uee.adapter();
+        Set<ElementKind> wanted = EnumSet.of(ElementKind.TAG, ElementKind.LOOT_TABLE);
+
+        RecordingSink single = new RecordingSink();
+        adapter.collectDatapacks(
+                ExportConfig.builder().kinds(ElementKind.TAG, ElementKind.LOOT_TABLE).threads(1).build(),
+                wanted, single);
+
+        RecordingSink many = new RecordingSink();
+        adapter.collectDatapacks(
+                ExportConfig.builder().kinds(ElementKind.TAG, ElementKind.LOOT_TABLE).threads(8).build(),
+                wanted, many);
+
+        helper.assertTrue(!single.generics.isEmpty(), "one thread collected nothing at all");
+        helper.assertTrue(single.generics.size() == many.generics.size(),
+                "one thread collected " + single.generics.size() + " records and eight collected "
+                        + many.generics.size());
+        helper.assertTrue(single.generics.equals(many.generics),
+                "the record sequence differs between one thread and eight, so the output depends on"
+                        + " the thread count");
+        helper.assertTrue(single.failures.size() == many.failures.size(),
+                "the failure count differs between thread counts: " + single.failures.size() + " vs "
+                        + many.failures.size());
 
         helper.succeed();
     }

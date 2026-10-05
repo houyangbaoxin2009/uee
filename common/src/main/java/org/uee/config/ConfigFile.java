@@ -726,6 +726,14 @@ public final class ConfigFile {
                 //   Members are recorded as declared, nested tags included but not expanded, and merged
                 //   the way vanilla's TagLoader does: stacked by pack priority, where a pack's replace
                 //   flag discards everything below it.
+                //
+                // 关于 loot_tables 类目 / about the loot_tables category:
+                //   记录 data/<命名空间>/loot_table/<路径>.json 产出的物品，以及它引用的标签与其它表
+                //   （引用只记录不展开）。战利品表是「单份胜出」：同一 id 后加载的包整份替换前面的，
+                //   与标签的合并规则不同——这是读原版加载路径得到的结论。
+                //   Records the item ids a table produces, plus the tags and other tables it references
+                //   (referenced, not expanded). Unlike a tag, a table is single-winner: a pack shipping
+                //   the same id replaces the one below rather than adding to it.
 
                 // ─── 采集 / collection ─────────────────────────────────────────────
                 icons = false                   // 图标渲染，较慢 / render icons, slow

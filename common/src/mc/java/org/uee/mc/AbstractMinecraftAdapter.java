@@ -27,6 +27,8 @@ import net.minecraft.world.item.crafting.ShapelessRecipe;
 import net.minecraft.world.level.block.Block;
 import org.uee.config.ExportConfig;
 import org.uee.datapack.TagFile;
+import org.uee.util.OrderedWork;
+import org.uee.datapack.LootTableFile;
 import org.uee.datapack.FunctionFlow;
 import org.uee.debug.MixinConfig;
 import org.uee.debug.ModContainerScanner;
@@ -243,6 +245,9 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         }
         if (wanted.contains(ElementKind.TAG)) {
             collectTags(config, sink);
+        }
+        if (wanted.contains(ElementKind.LOOT_TABLE)) {
+            collectLootTables(config, sink);
         }
     }
 
@@ -494,6 +499,70 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         return current;
     }
 
+    // ---------------------------------------------------------------- datapack content
+
+    /**
+     * Something a worker prepared, ready to hand to the sink.
+     *
+     * <p>Preparation is the half that can run on several threads; emitting is not, because the sink feeds
+     * per-shard buffers that are appended in sequence. So a worker never touches the sink — it returns one
+     * of these and the calling thread makes the call. That also keeps every failure report on one thread,
+     * which matters more than it looks: the report collector is not synchronised, and two threads adding
+     * to it would lose entries under load, which is exactly when failures are most likely.
+     */
+    private sealed interface Prepared {
+
+        /** A record to write. */
+        record Emit(ElementKind kind, String namespace, String key, String[] values, String[] extra)
+                implements Prepared {
+        }
+
+        /** A problem with one item, reported as a failure against the category. */
+        record Bad(ElementKind kind, String name, Throwable error) implements Prepared {
+        }
+
+        /** A problem worth a message but not a failure against an item. */
+        record Note(String message, Throwable error) implements Prepared {
+        }
+    }
+
+    /** Makes the sink calls for one prepared item. Always called on the collecting thread. */
+    private static void emit(ElementSink sink, Prepared prepared) {
+        switch (prepared) {
+            case Prepared.Emit e ->
+                    sink.generic(e.kind(), e.namespace(), e.key(), null, null, e.values(), e.extra());
+            case Prepared.Bad b -> sink.failure(b.kind(), b.name(), b.error());
+            case Prepared.Note n -> org.uee.Uee.reportFailure(n.message(), n.error());
+        }
+    }
+
+    /**
+     * Runs a datapack collection pass across worker threads, in configuration order.
+     *
+     * <p>Workers prepare, this thread emits, and the results arrive in the order the keys were given —
+     * so the output does not depend on the thread count. Threads come from the configuration and are
+     * only used when there is enough work to be worth it; see {@link OrderedWork}.
+     */
+    private void collectPrepared(ExportConfig config, List<String> orderedKeys,
+            java.util.function.Function<String, List<Prepared>> prepare, ElementSink sink) {
+        OrderedWork.run(orderedKeys, OrderedWork.usefulThreads(config.threads(), orderedKeys.size()),
+                "collect", prepare, prepared -> prepared.forEach(p -> emit(sink, p)));
+    }
+
+    /** Reads a resource to its end. */
+    private static String readAll(net.minecraft.server.packs.resources.Resource resource)
+            throws java.io.IOException {
+        try (java.io.BufferedReader reader = resource.openAsReader()) {
+            StringBuilder sb = new StringBuilder(4096);
+            char[] buf = new char[4096];
+            int n;
+            while ((n = reader.read(buf)) > 0) {
+                sb.append(buf, 0, n);
+            }
+            return sb.toString();
+        }
+    }
+
     // ---------------------------------------------------------------- tags
 
     /**
@@ -502,27 +571,25 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
      * <h2>Why the stacks, and not just the winning file</h2>
      *
      * <p>A tag is the result of merging every pack's version of the same file, so reading only the
-     * highest-priority one would produce a tag that looks complete and is missing entries — the worst
-     * kind of wrong, since nothing about it appears broken.
+     * highest-priority one would produce a tag that looks complete and is missing entries — the worst kind
+     * of wrong, since nothing about it appears broken.
      *
-     * <p>The merge rule here is read from vanilla's own {@code TagLoader} rather than inferred: walk the
-     * stack in order, parse each file, and if a file sets {@code replace} clear what has accumulated
-     * before appending its entries. A pack that declares {@code replace} therefore discards everything
-     * below it, which is what a pack overriding a tag intends.
+     * <p>The merge rule is read from vanilla's own {@code TagLoader} rather than inferred: walk the stack
+     * in order, parse each file, and if a file sets {@code replace} clear what has accumulated before
+     * appending its entries. A pack that declares {@code replace} therefore discards everything below it,
+     * which is what a pack overriding a tag intends.
      *
      * <h2>What is recorded</h2>
      *
      * <p>The declared members, including nested tags written with a leading {@code #}. Nested tags are
-     * <em>not</em> expanded: expansion needs the registry to resolve ids and cycle detection to
-     * terminate, and it would replace what a pack wrote with a derived set. A wiki wants the former —
-     * "this tag includes that tag" is information, and a reader following it can look up the other tag.
-     * The record marks which members are nested so a consumer can tell the two apart.
+     * <em>not</em> expanded: expansion needs the registry to resolve ids and cycle detection to terminate,
+     * and it would replace what a pack wrote with a derived set.
      */
     private void collectTags(ExportConfig config, ElementSink sink) {
         net.minecraft.server.packs.resources.ResourceManager manager = resources;
         if (manager == null) {
-            // No resources bound yet. Reported as nothing found rather than as a failure: a run before
-            // the resource load simply has no datapack content to offer.
+            // No resources bound yet. Nothing found rather than a failure: a run before the resource load
+            // simply has no datapack content to offer.
             return;
         }
         Map<ResourceLocation, List<net.minecraft.server.packs.resources.Resource>> stacks;
@@ -533,51 +600,56 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
             return;
         }
 
-        for (Map.Entry<ResourceLocation, List<net.minecraft.server.packs.resources.Resource>>
-                entry : stacks.entrySet()) {
-            ResourceLocation file = entry.getKey();
-            String type = TagFile.typeOf(file.getPath());
-            String path = TagFile.pathOf(file.getPath());
-            if (type == null || path == null || !config.acceptsNamespace(file.getNamespace())) {
-                continue;
+        // Sorted so the output is a function of the packs and not of a hash map's iteration order. The
+        // ordering guarantee only means something if the input order is itself defined.
+        List<String> keys = new ArrayList<>(stacks.size());
+        for (ResourceLocation id : stacks.keySet()) {
+            if (TagFile.pathOf(id.getPath()) != null && config.acceptsNamespace(id.getNamespace())) {
+                keys.add(id.toString());
             }
+        }
+        keys.sort(null);
+
+        collectPrepared(config, keys, key -> {
+            ResourceLocation id = ResourceLocation.parse(key);
+            List<Prepared> out = new ArrayList<>(2);
             try {
-                TagFile merged = mergeTag(entry.getValue());
+                TagFile merged = mergeTag(stacks.get(id), id, out);
                 if (merged == null) {
-                    // Every file in the stack was unreadable; TagFile reports each one, so there is
-                    // nothing to add here.
-                    continue;
+                    return out;
                 }
-                sink.generic(ElementKind.TAG, file.getNamespace(), path,
-                        null, null, merged.membersAsWritten(),
+                out.add(new Prepared.Emit(ElementKind.TAG, id.getNamespace(),
+                        TagFile.pathOf(id.getPath()), merged.membersAsWritten(),
                         new String[] {
-                                // `type` is recorded because it is not implied by the id: c:gems exists
-                                // as an item tag and as a block tag in different packs, and merging
-                                // those two would merge two different sets.
-                                "type", type,
+                                // `type` is recorded because it is not implied by the id: c:gems exists as
+                                // an item tag and as a block tag in different packs, and merging those two
+                                // would merge two different sets.
+                                "type", TagFile.typeOf(id.getPath()),
                                 "replace", Boolean.toString(merged.replace()),
                                 "count", Integer.toString(merged.entries().size()),
                                 "nested", Integer.toString(merged.nestedCount()),
-                                "optional", Integer.toString(merged.optionalCount())});
+                                "optional", Integer.toString(merged.optionalCount())}));
             } catch (Throwable t) {
-                sink.failure(ElementKind.TAG, file.toString(), t);
+                out.add(new Prepared.Bad(ElementKind.TAG, id.toString(), t));
             }
-        }
+            return out;
+        }, sink);
     }
 
     /** Merges one tag file's stack, in the order given, applying each file's {@code replace}. */
-    private TagFile mergeTag(List<net.minecraft.server.packs.resources.Resource> stack) {
+    private TagFile mergeTag(List<net.minecraft.server.packs.resources.Resource> stack,
+            ResourceLocation id, List<Prepared> problems) {
         List<TagFile.Entry> merged = new ArrayList<>(16);
         boolean sawReplace = false;
         for (net.minecraft.server.packs.resources.Resource resource : stack) {
             TagFile file;
-            try (java.io.BufferedReader reader = resource.openAsReader()) {
-                file = TagFile.parse(readAll(reader));
+            try {
+                file = TagFile.parse(readAll(resource));
             } catch (Throwable t) {
                 // One unreadable file in the stack must not lose the others: the packs below still
-                // contribute, which is the same rule the rest of collection follows.
-                org.uee.Uee.reportFailure("tag file from pack '" + resource.sourcePackId()
-                        + "' could not be read", t);
+                // contribute. Returned rather than reported here, because this runs on a worker.
+                problems.add(new Prepared.Note("tag file " + id + " from pack '"
+                        + resource.sourcePackId() + "' could not be read", t));
                 continue;
             }
             if (file.replace()) {
@@ -592,15 +664,67 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         return TagFile.of(sawReplace, merged);
     }
 
-    /** Reads a reader to its end. Small helper so the try-with-resources above stays readable. */
-    private static String readAll(java.io.Reader reader) throws java.io.IOException {
-        StringBuilder sb = new StringBuilder(4096);
-        char[] buf = new char[4096];
-        int n;
-        while ((n = reader.read(buf)) > 0) {
-            sb.append(buf, 0, n);
+    // ---------------------------------------------------------------- loot tables
+
+    /**
+     * Collects loot tables from {@code data/<ns>/loot_table/<path>.json}.
+     *
+     * <h2>Single winner, unlike a tag</h2>
+     *
+     * <p>A loot table is one document identified by one id, so a pack that ships a table at the same id
+     * <em>replaces</em> the one below it rather than adding to it. That is read off vanilla's own loading
+     * path rather than assumed — it goes through {@code SimpleJsonResourceReloadListener.scanDirectory},
+     * which collects into a map keyed by id, the same call shape as {@code listResources} here. Merging
+     * stacks the way tags do would therefore invent entries no pack ever declared.
+     *
+     * <h2>What is recorded</h2>
+     *
+     * <p>The item ids the table can produce, plus references to tags and to other tables, which a reader
+     * follows rather than having them expanded. See {@link LootTableFile} for why the walk stops there.
+     */
+    private void collectLootTables(ExportConfig config, ElementSink sink) {
+        net.minecraft.server.packs.resources.ResourceManager manager = resources;
+        if (manager == null) {
+            return;
         }
-        return sb.toString();
+        Map<ResourceLocation, net.minecraft.server.packs.resources.Resource> files;
+        try {
+            files = manager.listResources(LootTableFile.directory(),
+                    path -> path.getPath().endsWith(".json"));
+        } catch (Throwable t) {
+            sink.failure(ElementKind.LOOT_TABLE, LootTableFile.directory(), t);
+            return;
+        }
+
+        List<String> keys = new ArrayList<>(files.size());
+        for (ResourceLocation id : files.keySet()) {
+            if (LootTableFile.pathOf(id.getPath()) != null && config.acceptsNamespace(id.getNamespace())) {
+                keys.add(id.toString());
+            }
+        }
+        keys.sort(null);
+
+        collectPrepared(config, keys, key -> {
+            ResourceLocation id = ResourceLocation.parse(key);
+            try {
+                LootTableFile.Table table = LootTableFile.parse(readAll(files.get(id)));
+                String folder = LootTableFile.folderOf(id.getPath());
+                String[] extra = LootTableFile.extraPairs(table);
+                if (folder != null) {
+                    // A filing hint, not part of the id: the directories under loot_table/ are included
+                    // in the table's name, so `blocks/stone` is one id and `blocks` says only where the
+                    // author chose to keep it.
+                    String[] withFolder = java.util.Arrays.copyOf(extra, extra.length + 2);
+                    withFolder[extra.length] = "folder";
+                    withFolder[extra.length + 1] = folder;
+                    extra = withFolder;
+                }
+                return List.of(new Prepared.Emit(ElementKind.LOOT_TABLE, id.getNamespace(),
+                        LootTableFile.pathOf(id.getPath()), table.itemArray(), extra));
+            } catch (Throwable t) {
+                return List.of(new Prepared.Bad(ElementKind.LOOT_TABLE, id.toString(), t));
+            }
+        }, sink);
     }
 
     // ---------------------------------------------------------------- recipes

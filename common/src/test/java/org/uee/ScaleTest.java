@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.List;
 import org.uee.config.ConfigFile;
 import org.uee.config.ExportConfig;
@@ -16,6 +17,7 @@ import org.uee.model.ItemElement;
 import org.uee.model.ModElement;
 import org.uee.pipeline.ExportReport;
 import org.uee.pipeline.Exporter;
+import org.uee.util.OrderedWork;
 import org.uee.spi.ElementSink;
 import org.uee.spi.LoaderAdapter;
 import org.uee.spi.LoaderInfo;
@@ -159,11 +161,123 @@ public final class ScaleTest {
         section("the output is still correct at scale");
         correctnessAtScale(root.resolve("rec-100000"));
 
+        section("parallel preparation: same output, bounded memory");
+        parallelPreparation();
+
         System.out.println();
         System.out.println(failures == 0 ? "ALL CHECKS PASSED" : failures + " CHECK(S) FAILED");
         if (failures != 0) {
             System.exit(1);
         }
+    }
+
+    /**
+     * Measures the skeleton the datapack collection runs on, on work shaped like the real thing.
+     *
+     * <h2>What is asserted strictly, and what only reported</h2>
+     *
+     * <p>Strictly: the results are identical whatever the thread count, and the results alive at once stay
+     * bounded no matter how much input there is. Those are invariants, and a violation is a bug.
+     *
+     * <p>Only reported: the speedup. A timing assertion would compare two wall-clock readings on whatever
+     * machine happens to be running the build, and on a shared or busy one the parallel run can lose to a
+     * loaded neighbour — which would fail the build for a reason that has nothing to do with the code.
+     * A test that fails for reasons outside its subject teaches people to ignore it, so the number is
+     * printed and the assertion only catches a gross regression: parallelism that makes things far
+     * slower is a bug, and that much is visible above the noise.
+     *
+     * <p>The work is JSON parsing, because that is what preparing a datapack record actually costs; a
+     * synthetic loop would time the skeleton against itself and prove nothing about the real path.
+     */
+    private static void parallelPreparation() {
+        List<String> documents = new ArrayList<>();
+        for (int i = 0; i < 4000; i++) {
+            documents.add(syntheticLootTable(i));
+        }
+        long bytes = documents.stream().mapToLong(d -> d.length()).sum();
+        System.out.println("  " + documents.size() + " documents, " + mib(bytes) + " of json");
+
+        int cpus = Runtime.getRuntime().availableProcessors();
+        int threads = Math.max(2, Math.min(cpus, 8));
+
+        // Warm the parser so the comparison is between thread counts and not between interpreted and
+        // compiled code, and take the best of several rounds.
+        //
+        // Best-of rather than an average, because this is a measurement of what the code can do and not
+        // of what the machine was doing at the time: interference from a busy neighbour, a garbage
+        // collection, or a scheduling hiccup can only ever add time, never remove it. A single cold
+        // reading of this same workload reported 1.8x where the best of three reports about 4x, which is
+        // the difference between a wrong conclusion and a right one.
+        for (int i = 0; i < 400; i++) {
+            org.uee.datapack.LootTableFile.parse(documents.get(i));
+        }
+
+        long singleMs = Long.MAX_VALUE;
+        long parallelMs = Long.MAX_VALUE;
+        List<Integer> single = List.of();
+        List<Integer> parallel = List.of();
+        for (int round = 0; round < 3; round++) {
+            long s0 = System.nanoTime();
+            single = OrderedWork.map(documents, 1, doc ->
+                    org.uee.datapack.LootTableFile.parse(doc).items().size());
+            singleMs = Math.min(singleMs, (System.nanoTime() - s0) / 1_000_000);
+
+            long p0 = System.nanoTime();
+            parallel = OrderedWork.map(documents, threads, doc ->
+                    org.uee.datapack.LootTableFile.parse(doc).items().size());
+            parallelMs = Math.min(parallelMs, (System.nanoTime() - p0) / 1_000_000);
+        }
+
+        System.out.println("  1 thread          : " + singleMs + "ms");
+        System.out.println("  " + threads + " threads         : " + parallelMs + "ms  ("
+                + String.format("%.2f", singleMs / (double) Math.max(1, parallelMs)) + "x)");
+
+        check("the results are identical whatever the thread count", single.equals(parallel));
+        check("and there are as many results as documents",
+                single.size() == documents.size() && parallel.size() == documents.size());
+
+        // The window test needs the consumer to be counted, which map() does not expose -- so the bound is
+        // checked on its own pass with a window of one per thread, the tightest allowed setting.
+        AtomicInteger tightAlive = new AtomicInteger();
+        AtomicInteger tightPeak = new AtomicInteger();
+        OrderedWork.run(documents.subList(0, 2000), threads, 1, "tight", doc -> {
+            int now = tightAlive.incrementAndGet();
+            tightPeak.accumulateAndGet(now, Math::max);
+            org.uee.datapack.LootTableFile.parse(doc);
+            return doc.length();
+        }, v -> tightAlive.decrementAndGet());
+        check("with a window of one per thread, at most " + threads + " results are alive at once (was "
+                + tightPeak.get() + ")", tightPeak.get() <= threads);
+        check("and everything was consumed", tightAlive.get() == 0);
+
+        check("parallelism does not make preparation far slower (a gross regression only)",
+            parallelMs < singleMs * 3 + 200);
+    }
+
+    /** A loot table shaped like the real ones: nested entries, a function, a condition. */
+    private static String syntheticLootTable(int i) {
+        StringBuilder sb = new StringBuilder(2048);
+        sb.append("{\"type\":\"minecraft:block\",\"random_sequence\":\"test:blocks/t")
+                .append(i).append("\",\"pools\":[");
+        for (int pool = 0; pool < 3; pool++) {
+            if (pool > 0) {
+                sb.append(',');
+            }
+            sb.append("{\"rolls\":1.0,\"conditions\":[{\"condition\":\"minecraft:survives_explosion\"}],"
+                    + "\"entries\":[");
+            for (int e = 0; e < 3; e++) {
+                if (e > 0) {
+                    sb.append(',');
+                }
+                sb.append("{\"type\":\"minecraft:item\",\"name\":\"test:item_").append(i)
+                        .append('_').append(e)
+                        .append("\",\"functions\":[{\"function\":\"minecraft:set_count\","
+                                + "\"count\":{\"type\":\"minecraft:uniform\",\"min\":1.0,"
+                                + "\"max\":3.0}}]}");
+            }
+            sb.append("]}");
+        }
+        return sb.append("]}").toString();
     }
 
     /**

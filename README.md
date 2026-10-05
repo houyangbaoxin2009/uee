@@ -202,7 +202,7 @@ and no more for the dominant purpose**:
 | 方面 / Aspect | 默认 / Default | 为什么 / Why |
 | --- | --- | --- |
 | 格式 / format | `json` | 通用可读，无需解释 / readable anywhere |
-| 类目 / categories | 10 个：mods items blocks entities recipes **tags** effects fluids enchantments creative_tabs | 百科页要引用的注册表与分组全在里面，跑一次就够 / everything a wiki entry references |
+| 类目 / categories | 11 个：mods items blocks entities recipes **tags** **loot_tables** effects fluids enchantments creative_tabs | 百科页要引用的注册表与分组全在里面，跑一次就够 / everything a wiki entry references |
 | 分析 / analysis | 开，**独立成包** | n 个数据包 + **1 个**分析包；数据那半可单独交给下游 / n data packages plus one analysis bundle |
 | 不导 / left out | biomes dimensions structures sounds particles attributes damage_types | 大、少改、物品页用不到；一个词可加回 / large, rarely changed, one token away |
 
@@ -216,6 +216,13 @@ and no more for the dominant purpose**:
 ★ **`tags` records what a pack declares, not the expanded set.** Expansion needs the registry and cycle
 detection, and it would replace "what the pack wrote" with "what we computed". Same-named tags merge the
 way vanilla does: stacked by pack priority, where a pack's `replace` discards everything below it.
+
+★ **`loot_tables` 是「单份胜出」**（与标签相反）：同一 id 后加载的包**整份替换**前面的。
+记录产出的物品，以及引用的标签与其它表——**引用只记录不展开**。原版自己就是**并行解析**战利品表的。
+
+★ **`loot_tables` is single-winner**, unlike a tag: a pack shipping the same id replaces the one below it.
+It records the items produced plus the tags and tables referenced, and references are not expanded.
+Vanilla itself parses these in parallel, which is why collection spreads across threads.
 
 ★ **The default category set is pure collected content** — it does not straddle the
 collection/analysis boundary, so `kinds = ["common"]` means one thing even beside `analyze = false`.

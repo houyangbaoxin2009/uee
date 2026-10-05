@@ -67,6 +67,7 @@ public final class Tokens {
             // Tags describe how everything above is grouped, which is exactly what a wiki page
             // cites when it says "this item is a gem". A member of the dominant purpose, so it is in.
             ElementKind.TAG,
+            ElementKind.LOOT_TABLE,
             ElementKind.EFFECT,
             ElementKind.FLUID,
             ElementKind.ENCHANTMENT,
