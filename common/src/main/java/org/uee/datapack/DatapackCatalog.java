@@ -32,6 +32,8 @@ public final class DatapackCatalog {
     private final Map<String, FlowDefinition> flows = new TreeMap<>();
     private final Map<String, TargetDefinition> targets = new TreeMap<>();
     private final Map<String, StrategyDefinition> strategies = new TreeMap<>();
+    /** Flows defined as MC functions. Discovered by the loader, not read from a definition file. */
+    private final Map<String, FunctionFlow> functionFlows = new TreeMap<>();
     private final Map<String, DatapackSource> flowSource = new TreeMap<>();
     private final Map<String, DatapackSource> targetSource = new TreeMap<>();
     private final Map<String, DatapackSource> strategySource = new TreeMap<>();
@@ -210,6 +212,77 @@ public final class DatapackCatalog {
         return Map.copyOf(targets);
     }
 
+    /**
+     * Registers flows that are MC functions.
+     *
+     * <p>Called by the loader, which is the only thing that can enumerate a datapack's functions. A
+     * function flow and a configuration flow may share an id; that is reported, because which one
+     * {@code /uee flow <id>} would run must not depend on registration order.
+     */
+    public void addFunctionFlows(List<FunctionFlow> discovered) {
+        if (discovered == null) {
+            return;
+        }
+        for (FunctionFlow flow : discovered) {
+            if (flows.containsKey(flow.id())) {
+                // A configuration flow is the more specific definition of the two — it pins the
+                // settings — so it stays the one that runs, and the collision is reported.
+                problems.add(new Finding("datapack_flow_kind_collision", Finding.Severity.WARN,
+                        flow.id(),
+                        "flow '" + flow.id() + "' is defined both as a configuration and as the"
+                                + " function " + flow.resourceId() + "; the configuration is used",
+                        new String[] {"id", flow.id(), "function", flow.resourceId()}));
+                continue;
+            }
+            String existing = functionFlows.putIfAbsent(flow.id(), flow) == null ? null : "dup";
+            if (existing != null) {
+                problems.add(new Finding("datapack_shadowed", Finding.Severity.WARN, flow.id(),
+                        "flow function '" + flow.id() + "' is defined by more than one datapack;"
+                                + " " + flow.resourceId() + " is used",
+                        new String[] {"id", flow.id(), "kind", "flow function"}));
+            }
+        }
+    }
+
+    /** Flows defined as MC functions, by id, sorted. */
+    public Map<String, FunctionFlow> functionFlows() {
+        return Map.copyOf(functionFlows);
+    }
+
+    /** A function flow by id, or {@code namespace:id}. */
+    public FunctionFlow functionFlow(String id) {
+        if (id == null) {
+            return null;
+        }
+        FunctionFlow direct = functionFlows.get(id);
+        if (direct != null) {
+            return direct;
+        }
+        int colon = id.indexOf(':');
+        return colon < 0 ? null : functionFlows.get(id.substring(colon + 1));
+    }
+
+    /**
+     * A flow of either kind by id.
+     *
+     * <p>Lets a caller ask "is there a flow called X" without knowing which mechanism defined it,
+     * which is the point of presenting both under one name.
+     */
+    public Object anyFlow(String id) {
+        FlowDefinition config = flows.get(id);
+        if (config != null) {
+            return config;
+        }
+        return functionFlows.get(id);
+    }
+
+    /** Every flow id of either kind, sorted. */
+    public java.util.Set<String> allFlowIds() {
+        java.util.Set<String> out = new java.util.TreeSet<>(flows.keySet());
+        out.addAll(functionFlows.keySet());
+        return out;
+    }
+
     /** Every strategy, by id, sorted. */
     public Map<String, StrategyDefinition> strategies() {
         return Map.copyOf(strategies);
@@ -226,7 +299,8 @@ public final class DatapackCatalog {
     }
 
     public boolean isEmpty() {
-        return flows.isEmpty() && targets.isEmpty() && strategies.isEmpty();
+        return flows.isEmpty() && targets.isEmpty() && strategies.isEmpty()
+                && functionFlows.isEmpty();
     }
 
     /** Whether anything was defined at all, including a datapack that only had problems. */

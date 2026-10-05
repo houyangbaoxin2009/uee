@@ -19,6 +19,8 @@ import org.uee.globalpack.GlobalPackDiscovery;
 import org.uee.globalpack.GlobalPackPolicy;
 import org.uee.pipeline.ExportReport;
 import org.uee.pipeline.Exporter;
+import org.uee.pipeline.UeeJob;
+import org.uee.pipeline.UeeJobs;
 import org.uee.spi.LoaderAdapter;
 
 /**
@@ -96,20 +98,100 @@ public final class Uee {
     /**
      * Runs an export with the given configuration.
      *
+     * <p>The datapack catalog is resolved here and handed to the pipeline. Omitting it would mean a
+     * run described by a datapack target or strategy quietly exported nothing extra, which is the
+     * kind of silence that makes a feature look broken rather than misconfigured.
+     *
      * @param config the resolved configuration
      * @param root where artifacts are written
      * @return what was produced, including any per-element failures and the finding count
      * @throws IllegalStateException when no adapter is bound
      */
     public static ExportReport export(ExportConfig config, Path root) throws IOException {
-        LoaderAdapter current = requireAdapter();
-        return new Exporter(current, config, root, AnalysisEngine.standard()).run();
+        return export(config, root, AnalysisEngine.standard(), catalog());
     }
 
     /** Runs an export with a specific analysis set, for a caller that wants a subset of the checks. */
     public static ExportReport export(ExportConfig config, Path root, AnalysisEngine engine)
             throws IOException {
-        return new Exporter(requireAdapter(), config, root, engine).run();
+        return export(config, root, engine, catalog());
+    }
+
+    /** Runs an export against an already-resolved catalog. */
+    public static ExportReport export(ExportConfig config, Path root, AnalysisEngine engine,
+            DatapackCatalog catalog) throws IOException {
+        return new Exporter(requireAdapter(), config, root, engine, catalog).run();
+    }
+
+    // ---------------------------------------------------------------- jobs (the function interface)
+
+    /**
+     * The job runner behind the function-facing commands.
+     *
+     * <p>A single instance, because exports are deliberately serialised: two runs writing one bundle
+     * would corrupt it rather than finish it faster.
+     */
+    private static final UeeJobs JOBS = new UeeJobs();
+
+    /** The job runner. */
+    public static UeeJobs jobs() {
+        return JOBS;
+    }
+
+    /**
+     * Starts an export on a worker thread and returns immediately.
+     *
+     * <h2>Why this exists</h2>
+     *
+     * <p>An export invoked from an MC function runs inside a tick. Doing it synchronously there is not
+     * just slow — a large pack can hold the tick past the watchdog limit and take the server down. So
+     * a function-facing run is <em>started</em>, and the caller polls {@link UeeJobs#unfinished()}.
+     *
+     * <h2>The precondition, which is checked rather than assumed</h2>
+     *
+     * <p>This works because collection reads frozen registries, and the adapter has to say so through
+     * {@link LoaderAdapter#supports}. An adapter that has not declared
+     * {@link LoaderAdapter#CAP_REGISTRY_FROZEN} may not be read from a worker thread, and pretending
+     * otherwise would trade a slow tick for intermittent corruption. In that case this refuses and the
+     * caller is told to use the synchronous command instead.
+     *
+     * <p>Everything that touches loader state is resolved on the calling thread; only the registry walk
+     * and the writing happen off it.
+     *
+     * @param config the resolved configuration
+     * @param root where artifacts are written
+     * @return the started job, for polling by id
+     * @throws IllegalStateException when no adapter is bound, or the adapter cannot be read off-thread
+     */
+    public static UeeJob startExport(ExportConfig config, Path root) {
+        LoaderAdapter current = requireAdapter();
+        if (!current.supports(LoaderAdapter.CAP_REGISTRY_FROZEN)) {
+            throw new IllegalStateException("the " + current.info().loader()
+                    + " adapter has not declared '" + LoaderAdapter.CAP_REGISTRY_FROZEN
+                    + "', so an export cannot run off the server thread; use /uee export instead");
+        }
+        // Resolved here, on the caller's thread, because reading the mod list and scanning containers
+        // is loader state. Whether the catalog is actually used is the configuration's business, and
+        // the pipeline already honours that flag — duplicating the check here would be a second place
+        // for it to be wrong.
+        Exporter exporter = new Exporter(current, config, root, AnalysisEngine.standard(), catalog());
+        return JOBS.submit(config, root, () -> {
+            try {
+                return exporter.run();
+            } catch (IOException e) {
+                throw new IllegalStateException("export failed: " + e.getMessage(), e);
+            }
+        });
+    }
+
+    /**
+     * Stops the job runner and waits briefly for the running export.
+     *
+     * <p>Called when the game is shutting down, so a partly written bundle is not left behind on a
+     * normal exit.
+     */
+    public static void shutdownJobs() {
+        JOBS.shutdown();
     }
 
     /**
@@ -211,11 +293,24 @@ public final class Uee {
         if (current == null) {
             return DatapackCatalog.empty();
         }
-        if (!current.info().gameDirectory().isEmpty()) {
-            Path gameDir = Path.of(current.info().gameDirectory());
-            return DatapackCatalog.of(datapackSources(gameDir, current));
-        }
-        return DatapackCatalog.empty();
+        DatapackCatalog catalog = current.info().gameDirectory().isEmpty()
+                ? DatapackCatalog.empty()
+                : DatapackCatalog.of(datapackSources(Path.of(current.info().gameDirectory()), current));
+        // Function-defined flows come from the loader, which is the only thing that can enumerate a
+        // datapack's functions. Merging them here means one name reaches a flow of either kind.
+        catalog.addFunctionFlows(current.functionFlows());
+        return catalog;
+    }
+
+    /**
+     * Names the flow functions a caller would write, for the command surface and for documentation.
+     *
+     * <p>Exposed so a user can be told the convention rather than having to infer it from an empty
+     * list: {@code data/<namespace>/function/uee/<name>.mcfunction}.
+     */
+    public static String functionFlowPattern() {
+        return "data/<namespace>/function/" + org.uee.datapack.FunctionFlow.FUNCTION_DIR
+                + "/<name>.mcfunction";
     }
 
     /**

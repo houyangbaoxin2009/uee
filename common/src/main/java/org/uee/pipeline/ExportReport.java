@@ -53,6 +53,23 @@ public final class ExportReport {
     private final long millis;
     private final int findings;
 
+    /**
+     * Builds a report.
+     *
+     * <p>Public because a report is a value and the job runner accepts one from a caller's own work:
+     * without this, anyone using the programmatic interface could start a job but not supply its
+     * result. The running total is derived from the artifacts rather than taken on trust, so a report
+     * cannot disagree with its own contents.
+     */
+    public static ExportReport of(Path root, List<Artifact> artifacts, List<String> failures,
+            long millis, int findings) {
+        long records = 0;
+        for (Artifact a : artifacts) {
+            records += a.records();
+        }
+        return new ExportReport(root, artifacts, failures, records, millis, findings);
+    }
+
     ExportReport(Path root, List<Artifact> artifacts, List<String> failures, long records,
             long millis, int findings) {
         this.root = root;

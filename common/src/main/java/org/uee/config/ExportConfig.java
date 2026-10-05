@@ -68,6 +68,7 @@ public final class ExportConfig {
     private final boolean analyze;
     private final boolean analysisSeparate;
     private final boolean packagePerKind;
+    private final boolean quiet;
     private final boolean datapacks;
     private final String globalDatapacks;
     private final String globalDatapackDir;
@@ -96,6 +97,7 @@ public final class ExportConfig {
         this.analyze = b.analyze;
         this.analysisSeparate = b.analysisSeparate;
         this.packagePerKind = b.packagePerKind;
+        this.quiet = b.quiet;
         this.datapacks = b.datapacks;
         this.globalDatapacks = b.globalDatapacks;
         this.globalDatapackDir = b.globalDatapackDir;
@@ -199,6 +201,17 @@ public final class ExportConfig {
      */
     public boolean packagePerKind() {
         return packagePerKind;
+    }
+
+    /**
+     * Whether to suppress per-artifact progress output, keeping only the closing summary.
+     *
+     * <p>Off by default, because a person watching an interactive run wants to see it working. On is
+     * what a scripted run wants: an MC function logs every command's output, so a verbose export from
+     * a tick loop fills the server log with lines nobody reads and buries the one line that matters.
+     */
+    public boolean quiet() {
+        return quiet;
     }
 
     /**
@@ -307,6 +320,7 @@ public final class ExportConfig {
         b.analyze = analyze;
         b.analysisSeparate = analysisSeparate;
         b.packagePerKind = packagePerKind;
+        b.quiet = quiet;
         b.datapacks = datapacks;
         b.globalDatapacks = globalDatapacks;
         b.globalDatapackDir = globalDatapackDir;
@@ -370,6 +384,7 @@ public final class ExportConfig {
         private boolean analyze = true;
         private boolean analysisSeparate = true;
         private boolean packagePerKind = true;
+        private boolean quiet = false;
         private boolean datapacks = true;
         private String globalDatapacks = "auto";
         private String globalDatapackDir = null;
@@ -473,6 +488,11 @@ public final class ExportConfig {
 
         public Builder packagePerKind(boolean on) {
             this.packagePerKind = on;
+            return this;
+        }
+
+        public Builder quiet(boolean on) {
+            this.quiet = on;
             return this;
         }
 

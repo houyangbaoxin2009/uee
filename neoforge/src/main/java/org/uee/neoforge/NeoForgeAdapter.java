@@ -137,4 +137,44 @@ public final class NeoForgeAdapter extends AbstractMinecraftAdapter {
     protected Collection<RecipeHolder<?>> recipes() {
         return recipes;
     }
+
+    /**
+     * Function resource paths in the active datapacks, found through the server's resource manager.
+     *
+     * <p><b>Compile-unverified like the rest of this adapter.</b> The enumeration below is the vanilla
+     * shape — ask the resource manager for everything under {@code function/} ending in
+     * {@code .mcfunction} — which is why no loader-specific API is needed for it. What has to be
+     * checked against a real toolchain is the resource manager accessor and the map's value type, not
+     * the query.
+     *
+     * <p>Returns an empty list rather than failing when there is no server yet: a pack's flow
+     * functions are only meaningful once a world is loaded, and the rest of the command surface works
+     * without them.
+     */
+    @Override
+    protected java.util.List<String> datapackFunctionPaths() {
+        net.minecraft.server.MinecraftServer server = server();
+        if (server == null) {
+            return java.util.List.of();
+        }
+        java.util.List<String> paths = new java.util.ArrayList<>(16);
+        for (net.minecraft.resources.ResourceLocation id : server.getResourceManager()
+                .listResources("function", p -> p.getPath().endsWith(".mcfunction"))
+                .keySet()) {
+            paths.add(id.toString());
+        }
+        return paths;
+    }
+
+    /** The running server, or {@code null} before one exists. Supplied by the entry point. */
+    private static volatile net.minecraft.server.MinecraftServer server;
+
+    /** Records the running server, called once the server has started. */
+    public static void bindServer(net.minecraft.server.MinecraftServer running) {
+        server = running;
+    }
+
+    private static net.minecraft.server.MinecraftServer server() {
+        return server;
+    }
 }

@@ -90,6 +90,20 @@ public interface LoaderAdapter {
     }
 
     /**
+     * Flows defined as MC functions in the active datapacks.
+     *
+     * <p>Only the loader can enumerate datapack functions, so discovery happens there and the result
+     * is handed to UEE. UEE does not run these itself — the game already knows how — it only needs to
+     * know they exist so one name reaches a flow of either kind.
+     *
+     * <p>Default is empty, so an adapter that cannot enumerate functions simply offers no function
+     * flows while configuration flows keep working.
+     */
+    default List<org.uee.datapack.FunctionFlow> functionFlows() {
+        return List.of();
+    }
+
+    /**
      * The directory UEE should read global datapacks from, or {@code null} for the default.
      *
      * <p>An override rather than the directory itself, because the default is derived from the game

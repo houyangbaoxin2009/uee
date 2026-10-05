@@ -133,10 +133,26 @@ tasks.register('datapackTest', JavaExec) {
     args = [layout.buildDirectory.dir('datapack-test').get().asFile.absolutePath]
 }
 
+/**
+ * Runs the MC-function interface checks: the job model and the off-thread safety gate.
+ *
+ * <p>Both are only testable here. Inside a game, a blocking export is the failure that takes the
+ * server down, so it cannot be provoked on purpose — but nothing about the job model or the gate
+ * depends on Minecraft, so a stub adapter is enough.
+ */
+tasks.register('functionTest', JavaExec) {
+    description = 'Runs the job-model and off-thread safety-gate checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.FunctionInterfaceTest'
+    args = [layout.buildDirectory.dir('function-test').get().asFile.absolutePath]
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
     group = 'verification'
     dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest',
-            'datapackTest'
+            'datapackTest', 'functionTest'
 }

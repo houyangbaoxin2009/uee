@@ -24,6 +24,7 @@ import org.uee.config.ConfigResolver;
 import org.uee.config.ExportConfig;
 import org.uee.config.Tokens;
 import org.uee.datapack.DatapackCatalog;
+import org.uee.datapack.FunctionFlow;
 import org.uee.datapack.DatapackSource;
 import org.uee.datapack.FlowDefinition;
 import org.uee.datapack.StrategyDefinition;
@@ -31,6 +32,8 @@ import org.uee.datapack.TargetDefinition;
 import org.uee.globalpack.GlobalPackPolicy;
 import org.uee.model.ElementKind;
 import org.uee.pipeline.ExportReport;
+import org.uee.pipeline.UeeJob;
+import org.uee.pipeline.UeeJobs;
 
 /**
  * The {@code /uee} command tree, shared by all four loaders.
@@ -49,6 +52,39 @@ import org.uee.pipeline.ExportReport;
  * {@link ConfigFile} that {@link ConfigResolver} layers onto the defaults. That is why
  * {@code /uee export items,blocks} and {@code kinds = ["items","blocks"]} cannot mean different
  * things: by the time anything acts on them they are the same description.
+ *
+ * <h2>Designed to be called from an MC function</h2>
+ *
+ * <p>These commands are meant to be written into {@code .mcfunction} files, which imposes three
+ * requirements that a chat-only command would not have:
+ *
+ * <ul>
+ *   <li><b>It must not block the tick.</b> A function runs inside a tick, and an export that takes
+ *       seconds there will trip the server watchdog. So the export has an asynchronous form,
+ *       {@code /uee export async}, which returns immediately and is polled with {@code /uee jobs}.
+ *   <li><b>It must have a usable result code.</b> A function cannot receive a value, but
+ *       {@code execute store result} and {@code execute store success} read the command's return
+ *       value. Every verb here therefore returns something meaningful, documented per verb below.
+ *   <li><b>It must be quiet on request.</b> A function logs every command's output, so a verbose
+ *       export in a tick loop buries the log. {@code quiet = true} keeps one summary line.
+ * </ul>
+ *
+ * <h2>Result codes</h2>
+ *
+ * <pre>
+ * /uee                        files written; 0 on failure
+ * /uee export …               files written; 0 on failure
+ * /uee export async …         1 when started, 0 when refused
+ * /uee jobs                   unfinished jobs — poll this until 0
+ * /uee job &lt;id&gt;              1 if found, 0 if not
+ * /uee job &lt;id&gt; cancel       1 if cancelled, 0 if it had already started
+ * /uee analyze                findings produced
+ * /uee flow &lt;name&gt;            as /uee export, or 1 for a function flow that was started
+ * /uee flows | targets | …    count listed
+ * </pre>
+ *
+ * <p>The one that matters most is {@code /uee jobs}: waiting for it to reach zero is how a function
+ * waits for a run to finish, and it is why the interface is a pollable count rather than a callback.
  */
 public final class UeeCommand {
 
@@ -84,9 +120,31 @@ public final class UeeCommand {
 
                 .then(Commands.literal("export")
                         .executes(ctx -> runDefault(ctx.getSource(), null, null))
+                        // The function-facing form: returns in the same tick and is polled with
+                        // /uee jobs. First so it reads as an equal of the plain form rather than a
+                        // modifier bolted on.
+                        .then(Commands.literal("async")
+                                .executes(ctx -> runAsync(ctx.getSource(), ConfigFile.empty()))
+                                .then(Commands.argument("kinds", StringArgumentType.greedyString())
+                                        .executes(ctx -> runAsync(ctx.getSource(),
+                                                kindsOnly(arg(ctx, "kinds"))))))
                         .then(Commands.argument("kinds", StringArgumentType.greedyString())
                                 .executes(ctx -> runDefault(ctx.getSource(),
                                         arg(ctx, "kinds"), null))))
+
+                // Job inspection. /uee jobs returns the unfinished count, which is how a function
+                // waits: execute store result ... run uee jobs, and loop until it reaches zero.
+                .then(Commands.literal("jobs").executes(ctx -> jobs(ctx.getSource())))
+                .then(Commands.literal("job")
+                        .then(Commands.argument("id", com.mojang.brigadier.arguments.IntegerArgumentType
+                                        .integer(1))
+                                .executes(ctx -> jobDetail(ctx.getSource(),
+                                        com.mojang.brigadier.arguments.IntegerArgumentType
+                                                .getInteger(ctx, "id")))
+                                .then(Commands.literal("cancel")
+                                        .executes(ctx -> cancelJob(ctx.getSource(),
+                                                com.mojang.brigadier.arguments.IntegerArgumentType
+                                                        .getInteger(ctx, "id"))))))
 
                 .then(Commands.literal("formats")
                         .executes(ctx -> listFormats(ctx.getSource()))
@@ -127,6 +185,19 @@ public final class UeeCommand {
                         .then(Commands.literal("template")
                                 .executes(ctx -> configTemplate(ctx.getSource())))
                         .then(Commands.literal("reload").executes(ctx -> configReload(ctx.getSource()))));
+    }
+
+    /** Builds an override description from a category token list alone, for the async verb. */
+    private static ConfigFile kindsOnly(String kindsArg) {
+        if (kindsArg == null || kindsArg.isBlank()) {
+            return ConfigFile.empty();
+        }
+        java.util.Set<ElementKind> kinds = Tokens.kinds(split(kindsArg));
+        if (kinds == null) {
+            throw new IllegalArgumentException("unknown category in '" + kindsArg
+                    + "'; see /uee kinds");
+        }
+        return ConfigFile.builder().kinds(kinds).build();
     }
 
     private static String arg(CommandContext<CommandSourceStack> ctx, String name) {
@@ -186,10 +257,13 @@ public final class UeeCommand {
         }
 
         ExportConfig config = resolved.config();
+        boolean quiet = config.quiet();
         Path root = config.outputDir();
-        source.sendSuccess(() -> Component.literal(Uee.NAME + ": exporting "
-                + config.kinds().size() + " category/categories as "
-                + String.join(", ", config.formats())), false);
+        if (!quiet) {
+            source.sendSuccess(() -> Component.literal(Uee.NAME + ": exporting "
+                    + config.kinds().size() + " category/categories as "
+                    + String.join(", ", config.formats())), false);
+        }
 
         long started = System.nanoTime();
         try {
@@ -205,7 +279,11 @@ public final class UeeCommand {
                         + " element(s) could not be collected; the run continued and the list is in"
                         + " the output"), false);
             }
-            showLocations(source, root, config);
+            if (!quiet) {
+                showLocations(source, root, config);
+            }
+            // The return value is the contract with a function: files written, so that
+            // `execute store result` yields a number and `store success` gates on non-zero.
             return report.artifacts().size();
         } catch (Throwable t) {
             source.sendFailure(Component.literal(Uee.NAME + " export failed: " + t));
@@ -213,12 +291,120 @@ public final class UeeCommand {
         }
     }
 
+    // ---------------------------------------------------------------- the asynchronous path
+
+    /**
+     * Starts an export on a worker thread and returns immediately.
+     *
+     * <p>This is the form a function should use. A synchronous export inside a tick holds the server
+     * thread for as long as the run takes, which for a large pack is long enough to trip the
+     * watchdog; this returns in the same tick and the caller polls {@code /uee jobs}.
+     *
+     * <p>Refuses when the adapter has not declared that its registries may be read off-thread. That
+     * refusal is the honest answer: the alternative is to trade a stalled tick for intermittent
+     * corruption, and a clear error is better than either.
+     */
+    private static int runAsync(CommandSourceStack source, ConfigFile overrides) {
+        ConfigResolver.Resolved resolved;
+        try {
+            resolved = Uee.resolveForRun(overrides);
+        } catch (IllegalStateException | IOException e) {
+            source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
+            return 0;
+        }
+        if (!resolved.ok()) {
+            for (String error : resolved.errors()) {
+                source.sendFailure(Component.literal(Uee.NAME + ": " + error));
+            }
+            return 0;
+        }
+        for (String warning : resolved.warnings()) {
+            source.sendSuccess(() -> Component.literal(Uee.NAME + ": warning: " + warning), false);
+        }
+
+        ExportConfig config = resolved.config();
+        try {
+            UeeJob job = Uee.startExport(config, config.outputDir());
+            source.sendSuccess(() -> Component.literal(Uee.NAME + ": started job #" + job.id()
+                    + " (" + job.label() + "); poll /uee jobs until it reaches 0"), false);
+            return 1;
+        } catch (IllegalStateException e) {
+            source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
+            return 0;
+        } catch (Throwable t) {
+            source.sendFailure(Component.literal(Uee.NAME + " could not start the export: " + t));
+            return 0;
+        }
+    }
+
+    /**
+     * Reports unfinished jobs, and is the primitive a function polls.
+     *
+     * <p>The return value is the count, so a function waits with
+     * {@code execute store result score … run uee jobs} and loops until it is zero. An MC function
+     * cannot be handed a value and cannot block, so a polled count is the only shape that composes —
+     * which is the reason jobs exist at all.
+     */
+    private static int jobs(CommandSourceStack source) {
+        UeeJobs runner = Uee.jobs();
+        int unfinished = runner.unfinished();
+        if (unfinished == 0) {
+            source.sendSuccess(() -> Component.literal(Uee.NAME + ": idle"), false);
+        } else {
+            source.sendSuccess(() -> Component.literal(Uee.NAME + ": " + unfinished
+                    + " job(s) in progress"), false);
+            for (UeeJob job : runner.activeJobs()) {
+                source.sendSuccess(() -> Component.literal("  " + job.describe()), false);
+            }
+        }
+        if (!runner.recentJobs().isEmpty()) {
+            source.sendSuccess(() -> Component.literal("  recent:"), false);
+            runner.recentJobs().stream().limit(5).forEach(job -> source.sendSuccess(
+                    () -> Component.literal("    " + job.describe()), false));
+        }
+        return unfinished;
+    }
+
+    private static int jobDetail(CommandSourceStack source, int id) {
+        UeeJob job = Uee.jobs().get(id);
+        if (job == null) {
+            source.sendFailure(Component.literal(Uee.NAME + ": no job #" + id));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("  " + job.describe()), false);
+        source.sendSuccess(() -> Component.literal("    state " + job.state().token()
+                + ", kinds " + job.kinds() + ", formats " + job.formats()), false);
+        ExportReport report = job.report();
+        if (report != null) {
+            source.sendSuccess(() -> Component.literal("    wrote to " + report.root()), false);
+        }
+        return 1;
+    }
+
+    private static int cancelJob(CommandSourceStack source, int id) {
+        UeeJob job = Uee.jobs().get(id);
+        if (job == null) {
+            source.sendFailure(Component.literal(Uee.NAME + ": no job #" + id));
+            return 0;
+        }
+        if (Uee.jobs().cancel(id)) {
+            source.sendSuccess(() -> Component.literal(Uee.NAME + ": cancelled job #" + id), false);
+            return 1;
+        }
+        // A running export is mid-write across many open shards; stopping it would leave a bundle
+        // whose completeness cannot be determined, so this is refused rather than done half-way.
+        source.sendFailure(Component.literal(Uee.NAME + ": job #" + id + " has already started;"
+                + " an export in progress is not interrupted because a partly written bundle cannot"
+                + " be told from a complete one"));
+        return 0;
+    }
+
     /** Emits clickable paths, so the output can be opened without retyping them. */
     private static void showLocations(CommandSourceStack source, Path root, ExportConfig config) {
-        source.sendSuccess(() -> Component.literal("  data:     ").append(link(root)), false);
+        source.sendSuccess(() -> Component.literal("  data:     ").append(link(source, root)), false);
         if (config.analyze() && config.analysisSeparate()) {
             Path analysis = sibling(root, "-analysis");
-            source.sendSuccess(() -> Component.literal("  analysis: ").append(link(analysis)), false);
+            source.sendSuccess(() -> Component.literal("  analysis: ").append(link(source, analysis)), false);
         }
     }
 
@@ -228,13 +414,24 @@ public final class UeeCommand {
         return name == null ? root : root.resolveSibling(name + suffix);
     }
 
-    private static Component link(Path path) {
+    /**
+     * A path, clickable when there is a client to click it.
+     *
+     * <p>A function has no player behind it, and a console or the server log has nothing to click. In
+     * those contexts the path is still the useful part, so it is emitted as plain text rather than
+     * carrying an interaction that reaches nobody.
+     */
+    private static Component link(CommandSourceStack source, Path path) {
         String text = path.toAbsolutePath().toString();
-        return Component.literal(text)
-                .withStyle(style -> style
-                        .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_FILE, text))
-                        .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                                Component.literal("open / 打开"))));
+        boolean interactive = source.getEntity() != null;
+        Component base = Component.literal(text);
+        if (!interactive) {
+            return base;
+        }
+        return base.withStyle(style -> style
+                .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_FILE, text))
+                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                        Component.literal("open / 打开"))));
     }
 
     /**
@@ -344,7 +541,7 @@ public final class UeeCommand {
         }
         Path file = Uee.configFile();
         if (file != null) {
-            source.sendSuccess(() -> Component.literal("  config:   ").append(link(file)), false);
+            source.sendSuccess(() -> Component.literal("  config:   ").append(link(source, file)), false);
         }
         return 1;
     }
@@ -400,22 +597,52 @@ public final class UeeCommand {
             source.sendFailure(Component.literal(Uee.NAME + ": /uee flow <name>"));
             return 0;
         }
+        // Two kinds of flow live under one name. A function flow is a datapack function, so the game
+        // runs it — UEE only has to find it and hand it over, which keeps a pack free to write a flow
+        // as a sequence of steps rather than only as a configuration.
+        FunctionFlow functionFlow = Uee.catalog().functionFlow(name);
+        if (functionFlow != null) {
+            return runFunctionFlow(source, functionFlow);
+        }
         return runWith(source, ConfigFile.builder().flow(name).build());
+    }
+
+    /**
+     * Runs a flow that is an MC function.
+     *
+     * <p>UEE deliberately does not interpret the function: the game already has a function runner, and
+     * reimplementing it would mean a second, worse one that cannot express {@code execute},
+     * {@code data}, macros or anything else a pack might use. All that is needed is to hand the
+     * resource id over.
+     */
+    private static int runFunctionFlow(CommandSourceStack source, FunctionFlow flow) {
+        try {
+            McFunctions.run(source, flow.resourceId());
+            source.sendSuccess(() -> Component.literal(Uee.NAME + ": ran flow "
+                    + flow.qualifiedId() + " (" + flow.resourceId() + ")"), false);
+            return 1;
+        } catch (Throwable t) {
+            source.sendFailure(Component.literal(Uee.NAME + ": flow " + flow.qualifiedId()
+                    + " could not be run: " + t));
+            return 0;
+        }
     }
 
     private static int listFlows(CommandSourceStack source) {
         DatapackCatalog catalog = Uee.catalog();
-        if (catalog.flows().isEmpty()) {
+        if (catalog.allFlowIds().isEmpty()) {
             source.sendSuccess(() -> Component.literal(Uee.NAME
                     + ": no datapack defines a flow"), false);
             source.sendSuccess(() -> Component.literal(
-                    "  add one at data/<namespace>/uee/flows/<id>.json in a datapack"), false);
+                    "  a configuration flow goes at data/<namespace>/uee/flows/<id>.json"), false);
+            source.sendSuccess(() -> Component.literal(
+                    "  a function flow goes at " + Uee.functionFlowPattern()), false);
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("flows / 流程 (" + catalog.flows().size() + ")"),
-                false);
+        source.sendSuccess(() -> Component.literal("flows / 流程 (" + catalog.allFlowIds().size()
+                + ")"), false);
         for (FlowDefinition flow : catalog.flows().values()) {
-            source.sendSuccess(() -> Component.literal("  " + flow.qualifiedId()
+            source.sendSuccess(() -> Component.literal("  " + flow.qualifiedId() + "  [config]"
                     + (flow.description() == null ? "" : "  — " + flow.description())), false);
             source.sendSuccess(() -> Component.literal("      sets: "
                     + (flow.touchedKeys().isEmpty() ? "(defaults only)"
@@ -423,7 +650,12 @@ public final class UeeCommand {
                     + (flow.hasTargets() ? "  targets: " + String.join(", ", flow.targets()) : "")),
                     false);
         }
-        return catalog.flows().size();
+        for (FunctionFlow flow : catalog.functionFlows().values()) {
+            source.sendSuccess(() -> Component.literal("  " + flow.qualifiedId() + "  [function]  "
+                    + flow.resourceId()
+                    + (flow.description() == null ? "" : "  — " + flow.description())), false);
+        }
+        return catalog.allFlowIds().size();
     }
 
     private static int listTargets(CommandSourceStack source) {
@@ -552,7 +784,7 @@ public final class UeeCommand {
             source.sendSuccess(() -> Component.literal("  icons:   " + config.icons()), false);
             Path file = Uee.configFile();
             if (file != null) {
-                source.sendSuccess(() -> Component.literal("  config:  ").append(link(file)), false);
+                source.sendSuccess(() -> Component.literal("  config:  ").append(link(source, file)), false);
             }
             return 1;
         } catch (IOException | IllegalStateException e) {
@@ -567,7 +799,7 @@ public final class UeeCommand {
             source.sendFailure(Component.literal(Uee.NAME + ": no adapter bound"));
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("config file: ").append(link(file)), false);
+        source.sendSuccess(() -> Component.literal("config file: ").append(link(source, file)), false);
         return 1;
     }
 
@@ -576,7 +808,7 @@ public final class UeeCommand {
             ExportConfig config = Uee.resolveForRun(ConfigFile.empty()).config();
             Path file = Uee.writeConfig(config);
             source.sendSuccess(() -> Component.literal(Uee.NAME
-                    + ": wrote the effective configuration to ").append(link(file)), false);
+                    + ": wrote the effective configuration to ").append(link(source, file)), false);
             return 1;
         } catch (IOException | IllegalStateException e) {
             source.sendFailure(Component.literal(Uee.NAME + ": " + e));
@@ -594,7 +826,7 @@ public final class UeeCommand {
             Files.createDirectories(file.getParent());
             Files.writeString(file, ConfigFile.template());
             source.sendSuccess(() -> Component.literal(Uee.NAME
-                    + ": wrote the annotated default configuration to ").append(link(file)), false);
+                    + ": wrote the annotated default configuration to ").append(link(source, file)), false);
             source.sendSuccess(() -> Component.literal(
                     "  every key is documented in place; edit it and run /uee config reload"), false);
             return 1;
@@ -652,6 +884,12 @@ public final class UeeCommand {
         source.sendSuccess(() -> Component.literal(
                 "  " + p + " flow <name>           run a datapack-defined flow"), false);
         source.sendSuccess(() -> Component.literal(
+                "  " + p + " export async [kinds]  start an export and return at once"), false);
+        source.sendSuccess(() -> Component.literal(
+                "  " + p + " jobs                  unfinished jobs; poll until 0"), false);
+        source.sendSuccess(() -> Component.literal(
+                "  " + p + " job <id> [cancel]     inspect or cancel a job"), false);
+        source.sendSuccess(() -> Component.literal(
                 "  " + p + " flows | targets | strategies | datapacks"), false);
         source.sendSuccess(() -> Component.literal(
                 "  " + p + " globalpack            who provides global datapacks"), false);
@@ -663,6 +901,9 @@ public final class UeeCommand {
                 "  " + p + " config show|path|save|template|reload"), false);
         source.sendSuccess(() -> Component.literal(
                 "  categories: " + Tokens.groups() + ", or any name from " + p + " kinds"), false);
+        source.sendSuccess(() -> Component.literal(
+                "  callable from " + Uee.functionFlowPattern() + "; use 'export async' there so the"
+                        + " tick is not held"), false);
         return 1;
     }
 }

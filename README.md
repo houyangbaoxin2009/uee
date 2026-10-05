@@ -75,7 +75,7 @@ object**, so a setting means the same thing whichever way it is expressed.
 | 接口 / Interface | 入口 / Entry |
 | --- | --- |
 | 函数 API / function API | `org.uee.Uee` 的静态方法 / the static methods on `org.uee.Uee` |
-| 命令 / command | 游戏内 `/uee …` / `/uee …` in game |
+| 命令 / command | 游戏内 `/uee …`，**可从 MC 函数调用** / `/uee …` in game, **callable from MC functions** |
 | 配置文件 / config file | `<游戏目录>/config/uee.data.tie` |
 | 数据驱动 / data-driven | 数据包里的 `data/<命名空间>/uee/` |
 
@@ -178,6 +178,9 @@ The file is **partial**: name only the keys you want to change. The layering is
 ```text
 /uee                              一键导出：默认设置直接跑
 /uee export [类别]                选择导出哪些内容
+/uee export async [类别]          异步导出，立即返回（函数用这个）
+/uee jobs                         未完成的作业数；轮询到 0 即完成
+/uee job <id> [cancel]            查看/取消作业
 /uee formats <格式>               选择输出格式
 /uee data | analysis              只跑其中一个半场
 /uee analyze                      只做检查，不导出
@@ -193,6 +196,50 @@ The file is **partial**: name only the keys you want to change. The layering is
 
 The one-key default is **`json`, n data packages, and one analysis package** (n being the number of
 data categories selected).
+
+### 从 MC 函数调用 / Called from an MC function
+
+这个接口是为 **MCFUNCTION** 设计的，不只是聊天框里的命令。函数里跑有三条硬约束，都有对应做法：
+
+This interface is designed for **MCFUNCTION**, not only for the chat box. Three constraints apply
+inside a function, each with an answer:
+
+| 约束 / Constraint | 做法 / Answer |
+| --- | --- |
+| **不能阻塞 tick**（会触发 watchdog） / must not block the tick | `/uee export async` 立即返回，`/uee jobs` 轮询到 0 |
+| **函数收不到返回值** / a function receives no value | 每个动词都有返回码，用 `execute store result/success` 取 |
+| **函数会刷屏日志** / a function logs everything | `quiet = true` 只留汇总行；异步形式默认安静 |
+
+```mcfunction
+# data/mypack/function/uee/export.mcfunction
+# 一条"流程"就是一个函数——这正是数据包定义新流程最原生的形态。
+# A "flow" is a function — the most native way for a pack to define one.
+uee export async items,blocks
+```
+
+```mcfunction
+# 等它跑完：函数不能阻塞，所以用轮询。jobs 的返回值就是"还没完成的作业数"。
+# Wait for it: a function cannot block, so it polls. `jobs` returns the unfinished count.
+execute store result score #pending uee.run uee jobs
+execute if score #pending uee.run matches 1.. run schedule function mypack:uee/wait 1t
+```
+
+★ 异步导出**要求适配器声明 registries 已冻结**（`registry_frozen`）。没声明就拒绝，并告诉你改用
+同步形式——因为"把卡 tick 换成偶发数据损坏"不是一笔划算的买卖。
+
+★ An asynchronous export **requires the adapter to declare `registry_frozen`**. Without it the command
+refuses and points at the synchronous form, because trading a stalled tick for intermittent
+corruption is not a good trade.
+
+**两种流程**都出现在 `/uee flows` 里，用同一个名字调用 —— 调用者不必知道数据包选了哪种机制：
+
+**Both kinds of flow** appear in `/uee flows` and are reachable under one name, so a caller does not
+have to know which mechanism a pack chose:
+
+| 形态 / Form | 位置 / Where | 擅长 / Good at |
+| --- | --- | --- |
+| 配置流程 / configuration flow | `data/<ns>/uee/flows/<id>.json` | 同一套导出的不同设置 / the same run, described differently |
+| 函数流程 / function flow | `data/<ns>/function/uee/<name>.mcfunction` | 「按顺序做这些事」，可与其它命令交错 / a sequence of steps, interleaved with other commands |
 
 ## 输出格式 / Output formats
 

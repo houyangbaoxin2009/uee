@@ -59,7 +59,7 @@ public final class ConfigFile {
     /** Keys this loader understands, for validation and help. */
     public static final String[] KNOWN_KEYS = {
             "output", "package", "formats", "kinds",
-            "analyze", "analysis_separate", "package_per_kind",
+            "analyze", "analysis_separate", "package_per_kind", "quiet",
             "icons", "pretty", "incremental", "include_paths",
             "shard_by_namespace", "shard_size", "memory_limit_mb", "threads",
             "include_namespaces", "exclude_namespaces", "exclude_mods",
@@ -73,6 +73,7 @@ public final class ConfigFile {
     private final Boolean analyze;
     private final Boolean analysisSeparate;
     private final Boolean packagePerKind;
+    private final Boolean quiet;
     private final Boolean icons;
     private final Boolean pretty;
     private final Boolean incremental;
@@ -105,6 +106,7 @@ public final class ConfigFile {
         this.analyze = b.analyze;
         this.analysisSeparate = b.analysisSeparate;
         this.packagePerKind = b.packagePerKind;
+        this.quiet = b.quiet;
         this.icons = b.icons;
         this.pretty = b.pretty;
         this.incremental = b.incremental;
@@ -181,6 +183,9 @@ public final class ConfigFile {
         if (packagePerKind != null) {
             keys.add("package_per_kind");
         }
+        if (quiet != null) {
+            keys.add("quiet");
+        }
         if (icons != null) {
             keys.add("icons");
         }
@@ -248,6 +253,7 @@ public final class ConfigFile {
         }
         return output == null && packageName == null && formats == null && kinds == null
                 && analyze == null && analysisSeparate == null && packagePerKind == null
+                && quiet == null
                 && icons == null && pretty == null && incremental == null && includePaths == null
                 && shardByNamespace == null && shardSize == null && memoryLimitMb == null
                 && threads == null && includeNamespaces == null && excludeNamespaces == null
@@ -286,6 +292,9 @@ public final class ConfigFile {
         }
         if (packagePerKind != null) {
             b.packagePerKind(packagePerKind);
+        }
+        if (quiet != null) {
+            b.quiet(quiet);
         }
         if (icons != null) {
             b.icons(icons);
@@ -425,6 +434,7 @@ public final class ConfigFile {
                 case "analyze" -> b.analyze = value.asBool();
                 case "analysis_separate" -> b.analysisSeparate = value.asBool();
                 case "package_per_kind" -> b.packagePerKind = value.asBool();
+                case "quiet" -> b.quiet = value.asBool();
                 case "icons" -> b.icons = value.asBool();
                 case "pretty" -> b.pretty = value.asBool();
                 case "incremental" -> b.incremental = value.asBool();
@@ -614,6 +624,7 @@ public final class ConfigFile {
                 analyze = true                  // 是否分析 / run the analysis
                 analysis_separate = true        // 分析独立成包，与数据分开 / keep the analysis in its own bundle
                 package_per_kind = true         // 每个类目一个子目录 / one sub-directory per category
+                quiet = false                   // 静默：只留汇总行。供函数/脚本调用时用 / quiet: summary only, for functions and scripts
 
                 // ─── 采集 / collection ─────────────────────────────────────────────
                 icons = false                   // 图标渲染，较慢 / render icons, slow
@@ -762,6 +773,7 @@ public final class ConfigFile {
         v.put("analyze", Boolean.toString(config.analyze()));
         v.put("analysis_separate", Boolean.toString(config.analysisSeparate()));
         v.put("package_per_kind", Boolean.toString(config.packagePerKind()));
+        v.put("quiet", Boolean.toString(config.quiet()));
         v.put("icons", Boolean.toString(config.icons()));
         v.put("pretty", Boolean.toString(config.pretty()));
         v.put("include_paths", Boolean.toString(config.includePaths()));
@@ -850,6 +862,7 @@ public final class ConfigFile {
         private Boolean analyze;
         private Boolean analysisSeparate;
         private Boolean packagePerKind;
+        private Boolean quiet;
         private Boolean icons;
         private Boolean pretty;
         private Boolean incremental;
@@ -935,6 +948,11 @@ public final class ConfigFile {
 
         public Builder analysisSeparate(boolean on) {
             this.analysisSeparate = on;
+            return this;
+        }
+
+        public Builder quiet(boolean on) {
+            this.quiet = on;
             return this;
         }
 

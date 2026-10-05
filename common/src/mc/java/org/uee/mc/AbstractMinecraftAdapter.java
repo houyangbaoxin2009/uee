@@ -26,6 +26,7 @@ import net.minecraft.world.item.crafting.ShapedRecipe;
 import net.minecraft.world.item.crafting.ShapelessRecipe;
 import net.minecraft.world.level.block.Block;
 import org.uee.config.ExportConfig;
+import org.uee.datapack.FunctionFlow;
 import org.uee.debug.MixinConfig;
 import org.uee.debug.ModContainerScanner;
 import org.uee.model.BlockElement;
@@ -172,6 +173,41 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
             containers.put(mod.id(), info);
             mixins.addAll(ModContainerScanner.readMixinConfigs(info, mod.id()));
         }
+    }
+
+    /**
+     * Flow functions found in the active datapacks.
+     *
+     * <p>Only the loader can enumerate a datapack's functions, so the subclass supplies the list of
+     * function resource paths and the convention is applied here. Keeping the naming rule shared
+     * means all four loaders agree on where a flow function lives, rather than each deciding.
+     */
+    @Override
+    public List<FunctionFlow> functionFlows() {
+        List<FunctionFlow> out = new ArrayList<>(4);
+        for (String resourcePath : datapackFunctionPaths()) {
+            String name = FunctionFlow.flowNameOf(resourcePath);
+            if (name == null) {
+                continue;
+            }
+            String namespace = FunctionFlow.namespaceOf(resourcePath);
+            if (namespace == null) {
+                continue;
+            }
+            out.add(new FunctionFlow(name, namespace, resourcePath, null));
+        }
+        return out;
+    }
+
+    /**
+     * Every function resource path in the active datapacks.
+     *
+     * <p>Left to the loader because enumerating functions is loader API. Returning an empty list is a
+     * valid answer — it simply means no function flows are offered, while configuration flows and
+     * every command keep working.
+     */
+    protected List<String> datapackFunctionPaths() {
+        return List.of();
     }
 
     /** Container inspections, filled on first use. */
