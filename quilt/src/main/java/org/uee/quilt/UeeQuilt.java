@@ -27,6 +27,7 @@ public final class UeeQuilt implements ModInitializer {
 
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             adapter.bindResources(server.getResourceManager());
+            adapter.bindRegistryAccess(server.registryAccess());
             adapter.bindRecipes(server.getRecipeManager().getRecipes());
         });
 

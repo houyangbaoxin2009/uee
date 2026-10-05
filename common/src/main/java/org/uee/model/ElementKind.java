@@ -33,6 +33,15 @@ public enum ElementKind {
      * entity's record because a table is referenced by many things at once and describes itself.
      */
     LOOT_TABLE("loot_table", "loot_tables"),
+    /**
+     * Translation tables — {@code assets/<ns>/lang/<locale>.json}.
+     *
+     * <p>Collected content, and the one category that is about text rather than about things: a wiki
+     * needs it for everything an item or a block record cannot carry, which is a large minority of what
+     * a player reads — tooltips, subtitles, death messages, GUI labels. Every other record refers to a
+     * translation key; this is where those are resolved.
+     */
+    LANG("lang", "langs"),
     /** Status effects (potion effects). */
     EFFECT("effect", "effects"),
     /** Fluids. */

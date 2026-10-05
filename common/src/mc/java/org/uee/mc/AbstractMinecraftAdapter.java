@@ -3,6 +3,7 @@ package org.uee.mc;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -12,6 +13,7 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.EntityType;
@@ -28,6 +30,7 @@ import net.minecraft.world.level.block.Block;
 import org.uee.config.ExportConfig;
 import org.uee.datapack.TagFile;
 import org.uee.util.OrderedWork;
+import org.uee.datapack.LangFile;
 import org.uee.datapack.LootTableFile;
 import org.uee.datapack.FunctionFlow;
 import org.uee.debug.MixinConfig;
@@ -35,6 +38,7 @@ import org.uee.debug.ModContainerScanner;
 import org.uee.model.BlockElement;
 import org.uee.model.DebugSection;
 import org.uee.model.ElementKind;
+import org.uee.model.RegistrySource;
 import org.uee.model.EntityElement;
 import org.uee.model.ItemElement;
 import org.uee.model.ModElement;
@@ -261,6 +265,9 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         if (wanted.contains(ElementKind.LOOT_TABLE)) {
             collectLootTables(config, sink);
         }
+        if (wanted.contains(ElementKind.LANG)) {
+            collectLangs(config, sink);
+        }
     }
 
     @Override
@@ -286,8 +293,14 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
                 "entity_type", String.valueOf(BuiltInRegistries.ENTITY_TYPE.size()),
                 "mob_effect", String.valueOf(BuiltInRegistries.MOB_EFFECT.size()),
                 "fluid", String.valueOf(BuiltInRegistries.FLUID.size()),
-                "enchantment", String.valueOf(enchantmentRegistrySize()),
-                "biome", String.valueOf(biomeRegistrySize())));
+                // Read through the same table the collection uses, so a size reported here cannot
+                // disagree with what the run actually walks. The two hooks that used to stand here
+                // returned -1 and were never overridden, which is how a category can look measured and
+                // be empty.
+                "enchantment", String.valueOf(sizeOf(ElementKind.ENCHANTMENT)),
+                "biome", String.valueOf(sizeOf(ElementKind.BIOME)),
+                "creative_tab", String.valueOf(sizeOf(ElementKind.CREATIVE_TAB)),
+                "attribute", String.valueOf(sizeOf(ElementKind.ATTRIBUTE))));
         sections.add(DebugSection.of("mods",
                 "count", String.valueOf(loadedMods().size())));
         return sections;
@@ -406,44 +419,120 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
 
     // ---------------------------------------------------------------- other registries
 
+    /**
+     * Walks every registry-backed category.
+     *
+     * <h2>Why this reads a table instead of naming registries itself</h2>
+     *
+     * <p>What used to be here named two registries and called one hook that returned null, so nine
+     * categories that the configuration, the command surface and the vocabulary all advertised produced
+     * nothing — including two in the default set. Nothing could tell the difference between a category
+     * with no collector and a category whose pack had no content.
+     *
+     * <p>Now the list lives in {@link RegistrySource}, one entry per category, and this walks it. The
+     * table is checked by a test that fails if any declared category is accounted for by nothing, which is
+     * the part that would have caught the nine: the question is only askable if the answer is written
+     * down in one place.
+     *
+     * <p>Both families are read the same way. A built-in registry is looked up in
+     * {@code BuiltInRegistries.REGISTRY}, which is itself a registry of registries, and a data-loaded one
+     * through the server's registry access. So a category's location is data rather than a branch, and
+     * adding one is a line in the table.
+     */
     private void collectGenericRegistries(ExportConfig config, Collection<ElementKind> wanted,
             ElementSink sink) {
-        forEachSimple(ElementKind.EFFECT, wanted, config, sink, BuiltInRegistries.MOB_EFFECT, true);
-        forEachSimple(ElementKind.FLUID, wanted, config, sink, BuiltInRegistries.FLUID, false);
-        forEachBiome(wanted, config, sink);
+        for (RegistrySource source : RegistrySource.forKinds(
+                wanted instanceof java.util.Set<ElementKind> set ? set
+                        : EnumSet.copyOf(wanted))) {
+            Registry<?> registry = registryOf(source);
+            if (registry == null) {
+                // Legitimately unreachable rather than broken: a data-loaded registry needs a running
+                // server to exist, and a collection attempted without one has nothing to read. The
+                // category is simply absent from the output, which is the same thing that would happen
+                // if the pack had no entries.
+                continue;
+            }
+            ElementKind kind = source.kind();
+            collectRegistry(config, kind, registry.keySet(), sink, id -> {
+                Object entry = registry.get(id);
+                String[] names = namesOf(source, id, entry);
+                return new Prepared.Generic(kind, id.getNamespace(), id.toString(), names[0], names[1],
+                        new String[0], new String[0]);
+            });
+        }
     }
 
-    /** Walks a registry of named, translatable entries and reports each through {@code generic}. */
-    private <T> void forEachSimple(ElementKind kind, Collection<ElementKind> wanted,
-            ExportConfig config, ElementSink sink, Registry<T> registry, boolean translatable) {
-        if (!wanted.contains(kind)) {
-            return;
+    /**
+     * The registry a source names, or {@code null} when it cannot be reached.
+     *
+     * <p>A built-in registry is always reachable. A data-loaded one is only reachable while a server is
+     * running, because the server is what holds it — which is why the registry access is bound by the
+     * loaders rather than looked up here, and why an unbound one yields nothing instead of an error.
+     */
+    private Registry<?> registryOf(RegistrySource source) {
+        ResourceLocation location = ResourceLocation.tryParse(source.registry());
+        if (location == null) {
+            return null;
         }
-        collectRegistry(config, kind, registry.keySet(), sink, id -> {
-            String key = id.toLanguageKey(kind.singular());
-            return new Prepared.Generic(kind, id.getNamespace(), id.toString(),
-                    translator().translate(key, Translator.ZH_CN),
-                    translator().translate(key, Translator.EN_US),
-                    new String[0], new String[0]);
-        });
+        if (source.dynamic()) {
+            RegistryAccess access = registryAccess;
+            if (access == null) {
+                return null;
+            }
+            return access.registry(ResourceKey.createRegistryKey(location)).orElse(null);
+        }
+        return BuiltInRegistries.REGISTRY.get(location);
     }
 
-    private void forEachBiome(Collection<ElementKind> wanted, ExportConfig config,
-            ElementSink sink) {
-        if (!wanted.contains(ElementKind.BIOME)) {
-            return;
-        }
-        Registry<net.minecraft.world.level.biome.Biome> registry = biomeRegistry();
-        if (registry == null) {
-            return;
-        }
-        collectRegistry(config, ElementKind.BIOME, registry.keySet(), sink, id -> {
-            String key = id.toLanguageKey("biome");
-            return new Prepared.Generic(ElementKind.BIOME, id.getNamespace(), id.toString(),
+    /**
+     * An entry's name pair, according to how its registry says names are found.
+     *
+     * <p>The three conventions are not interchangeable, and the differences were read off the shipped
+     * language files rather than assumed. Two assumptions that would have been made here are wrong:
+     * fluids have no language key of their own (their block does), and an attribute's key is not
+     * derivable from its id — the entry reports {@code attribute.name.generic.max_health} while the
+     * obvious transform produces {@code attribute.minecraft.max_health}, which does not exist. So a
+     * registry either states its convention or the entry is asked, and neither is guessed.
+     *
+     * <p>Returns nulls when there is no name, which the record shape already handles: the fields are
+     * omitted rather than written empty, so a consumer sees "no name" rather than an empty one.
+     */
+    private String[] namesOf(RegistrySource source, ResourceLocation id, Object entry) {
+        switch (source.entryNames()) {
+            case LANG_KEY -> {
+                String key = id.toLanguageKey(source.namePrefix());
+                return new String[] {
                     translator().translate(key, Translator.ZH_CN),
-                    translator().translate(key, Translator.EN_US),
-                    new String[0], new String[0]);
-        });
+                    translator().translate(key, Translator.EN_US)};
+            }
+            case FROM_ENTRY -> {
+                String key = descriptionIdOf(entry);
+                if (key == null) {
+                    return new String[] {null, null};
+                }
+                return new String[] {
+                    translator().translate(key, Translator.ZH_CN),
+                    translator().translate(key, Translator.EN_US)};
+            }
+            default -> {
+                return new String[] {null, null};
+            }
+        }
+    }
+
+    /**
+     * The language key an entry reports for itself, or {@code null} when it does not report one.
+     *
+     * <p>Type-tested rather than declared, because the alternative is a per-kind branch at the call site —
+     * which is how the categories got out of step in the first place. Only the kinds whose entries
+     * genuinely know their own key appear here; a kind that does not will not be added to the table with
+     * this convention, and the table says which convention it uses.
+     */
+    private static String descriptionIdOf(Object entry) {
+        if (entry instanceof net.minecraft.world.entity.ai.attributes.Attribute attribute) {
+            return attribute.getDescriptionId();
+        }
+        return null;
     }
 
     /**
@@ -803,6 +892,82 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         return TagFile.of(sawReplace, merged);
     }
 
+    // ---------------------------------------------------------------- translation tables
+
+    /**
+     * Collects the translation tables under {@code assets/<ns>/lang/<locale>.json}.
+     *
+     * <h2>Why this category can be empty on a server, and why that is said out loud</h2>
+     *
+     * <p>Language files are the only thing this project reads from {@code assets/} rather than
+     * {@code data/}, and a resource manager is built for one side or the other and can only see its own:
+     * a client's sees assets, a dedicated server's sees data. So this reads whatever the bound manager
+     * exposes, and on a dedicated server that is nothing — not because anything is wrong, but because the
+     * files are not there to read.
+     *
+     * <p>Which is exactly the situation that must not be silent. A category that produces nothing looks
+     * identical to a pack that has no translations, and the user has no way to tell which they are looking
+     * at. So when a run asks for translations and the manager can see no language files at all, that is
+     * reported as a failure with the reason. It is not an error in the export; it is the answer to
+     * "where are my translations", and the export is the only place it can be given.
+     *
+     * <h2>One record per namespace and locale</h2>
+     *
+     * <p>A table, not a row per key: the vanilla language file alone has nearly seven thousand keys, and
+     * one record each would multiply that by namespace and locale into a file count and a diff no one
+     * would want, to say nothing of the shard overhead. The keys are in the record's value list.
+     */
+    private void collectLangs(ExportConfig config, ElementSink sink) {
+        net.minecraft.server.packs.resources.ResourceManager manager = resources;
+        if (manager == null) {
+            return;
+        }
+        Map<ResourceLocation, net.minecraft.server.packs.resources.Resource> files;
+        try {
+            // "lang" is matched within whichever side the manager was built for, so this finds
+            // assets/<ns>/lang on a client and nothing at all on a dedicated server -- which is the
+            // behaviour described above rather than an oversight.
+            files = manager.listResources(LangFile.directory(),
+                    path -> path.getPath().endsWith(".json"));
+        } catch (Throwable t) {
+            sink.failure(ElementKind.LANG, LangFile.directory(), t);
+            return;
+        }
+
+        if (files.isEmpty()) {
+            sink.failure(ElementKind.LANG, LangFile.directory(), new IllegalStateException(
+                    "no language files are visible to this resource manager. Language files live under"
+                            + " assets/, which a dedicated server's resource manager cannot see, so"
+                            + " translations are collected on a client only"));
+            return;
+        }
+
+        List<String> keys = new ArrayList<>(files.size());
+        for (ResourceLocation id : files.keySet()) {
+            if (LangFile.localeOf(id.getPath()) != null && config.acceptsNamespace(id.getNamespace())) {
+                keys.add(id.toString());
+            }
+        }
+        keys.sort(null);
+
+        collectPrepared(config, keys, key -> {
+            ResourceLocation id = ResourceLocation.parse(key);
+            try {
+                LangFile file = LangFile.parse(LangFile.localeOf(id.getPath()), readAll(files.get(id)));
+                if (file.size() == 0) {
+                    // A file with nothing usable in it is not a record: it would say a namespace has a
+                    // locale and then offer no keys, which is worse than saying nothing.
+                    return List.of();
+                }
+                return List.of(new Prepared.Generic(ElementKind.LANG, id.getNamespace(),
+                        LangFile.localeOf(id.getPath()), null, null, file.asLines().toArray(new String[0]),
+                        new String[] {"locale", file.locale(), "keys", Integer.toString(file.size())}));
+            } catch (Throwable t) {
+                return List.of(new Prepared.Bad(ElementKind.LANG, id.toString(), t));
+            }
+        }, sink);
+    }
+
     // ---------------------------------------------------------------- loot tables
 
     /**
@@ -1023,18 +1188,26 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
     }
 
     /** Enchantment registry; present as a dynamic registry rather than a built-in one. */
-    protected int enchantmentRegistrySize() {
-        return -1;
+    /**
+     * How many entries a registry-backed category has, or {@code -1} when its registry is unreachable.
+     *
+     * <p>-1 rather than zero, because the two mean different things here: a data-loaded registry with no
+     * server behind it is not empty, it is unavailable, and a report that said zero would be claiming
+     * knowledge it does not have.
+     */
+    public int sizeOf(ElementKind kind) {
+        RegistrySource source = RegistrySource.byKind().get(kind);
+        if (source == null) {
+            return -1;
+        }
+        Registry<?> registry = registryOf(source);
+        return registry == null ? -1 : registry.size();
     }
 
-    protected int biomeRegistrySize() {
-        return -1;
-    }
+
 
     /** The biome registry, or {@code null} when it cannot be reached from here. */
-    protected Registry<net.minecraft.world.level.biome.Biome> biomeRegistry() {
-        return null;
-    }
+
 
     /**
      * A holder list from a registry, widened to the interface type.
@@ -1049,8 +1222,32 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         return out;
     }
 
-    /** Registry access used when a recipe's result needs resolving without a live server. */
-    protected static RegistryAccess registryAccess() {
-        return RegistryAccess.EMPTY;
+    /**
+     * The registry access of the running server, or {@code null} when there is none.
+     *
+     * <p>A field rather than a hook returning {@code RegistryAccess.EMPTY}, which is what stood here: a
+     * method that nothing called and no subclass overrode, so the registries it was meant to reach were
+     * unreachable and the categories reading them produced nothing. Bound by the loaders because only
+     * they see the lifecycle moment at which a server exists.
+     */
+    private volatile RegistryAccess registryAccess;
+
+    /**
+     * Binds the registry access of the running server.
+     *
+     * <p>Null is a real state and not an error: before a world is loaded there is no server, and the
+     * categories that live in data-loaded registries are simply absent from the output — the same thing
+     * that happens when a pack has no entries. Saying so is better than reporting a failure for a run
+     * that did exactly what it could.
+     */
+    public void bindRegistryAccess(RegistryAccess access) {
+        this.registryAccess = access;
+        // The cached language tables were built against the previous access; a reload can change them.
+        this.translator = null;
+    }
+
+    /** The bound registry access, or {@code null}. */
+    protected RegistryAccess registryAccess() {
+        return registryAccess;
     }
 }

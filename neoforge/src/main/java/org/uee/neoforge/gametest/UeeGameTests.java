@@ -325,6 +325,65 @@ public final class UeeGameTests {
         helper.succeed();
     }
 
+    /**
+     * Every registry in the table actually resolves, and produces records.
+     *
+     * <p>The core test proves the table accounts for every declared category; it cannot prove the
+     * registry ids in it are real. This can, and it is the assertion that would have caught the state
+     * this table replaced — a hook that returned null, and nine categories that were selectable and
+     * produced nothing while nothing anywhere said so.
+     *
+     * <p>A dedicated server is the harder case to pass: the data-loaded registries only exist because a
+     * server is running, so a table entry that resolved them wrongly would produce nothing here and be
+     * invisible everywhere else.
+     */
+    @GameTest(template = "empty", timeoutTicks = 600)
+    public static void everyRegistryInTheTableResolves(GameTestHelper helper) {
+        LoaderAdapter adapter = Uee.adapter();
+        List<String> unresolved = new ArrayList<>();
+        List<String> empty = new ArrayList<>();
+
+        for (org.uee.model.RegistrySource source : org.uee.model.RegistrySource.all()) {
+            int size = ((AbstractMinecraftAdapter) adapter).sizeOf(source.kind());
+            if (size < 0) {
+                unresolved.add(source.kind().singular() + " (" + source.registry() + ")");
+            } else if (size == 0) {
+                empty.add(source.kind().singular());
+            }
+        }
+
+        helper.assertTrue(unresolved.isEmpty(),
+                "these registries could not be reached, so their categories produce nothing: "
+                        + unresolved);
+        helper.assertTrue(empty.isEmpty(),
+                "these registries resolved but are empty, which no vanilla registry should be: " + empty);
+
+        // And a collection over them produces records rather than merely finding registries. The two are
+        // different failures: a registry can resolve and the collector still emit nothing.
+        Set<ElementKind> wanted = EnumSet.of(ElementKind.ENCHANTMENT, ElementKind.CREATIVE_TAB,
+                ElementKind.SOUND, ElementKind.ATTRIBUTE, ElementKind.BIOME, ElementKind.DAMAGE_TYPE,
+                ElementKind.STRUCTURE, ElementKind.DIMENSION, ElementKind.PARTICLE,
+                ElementKind.EFFECT, ElementKind.FLUID);
+        RecordingSink sink = new RecordingSink();
+        adapter.collectRegistries(
+                ExportConfig.builder().kinds(wanted.toArray(new ElementKind[0])).build(), wanted, sink);
+
+        // Each of the ten registry categories must appear. Counted per prefix rather than in total,
+        // because a total would pass if one registry produced everything and another produced nothing.
+        for (ElementKind kind : wanted) {
+            String prefix = kind.singular() + ":";
+            boolean present = sink.generics.stream().anyMatch(g -> g.startsWith(prefix));
+            if (!present) {
+                helper.fail("no records were collected for " + kind.singular()
+                        + ", though its registry resolves");
+            }
+        }
+        helper.assertTrue(sink.failures.isEmpty(),
+                "collection reported failures, first: "
+                        + (sink.failures.isEmpty() ? "" : sink.failures.get(0)));
+        helper.succeed();
+    }
+
     /** The mod list contains this mod and the game itself, with dependencies parsed. */
     @GameTest(template = "empty", timeoutTicks = 200)
     public static void modListIsAvailable(GameTestHelper helper) {

@@ -28,6 +28,7 @@ public final class UeeNeoForge {
     private void onServerStarted(ServerStartedEvent event) {
         adapter.bindResources(event.getServer().getResourceManager());
         adapter.bindRecipes(event.getServer().getRecipeManager().getRecipes());
+        adapter.bindRegistryAccess(event.getServer().registryAccess());
     }
 
     private void onRegisterCommands(RegisterCommandsEvent event) {

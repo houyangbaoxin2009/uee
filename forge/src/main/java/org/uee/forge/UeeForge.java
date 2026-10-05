@@ -26,6 +26,7 @@ public final class UeeForge {
 
     private void onServerStarted(ServerStartedEvent event) {
         adapter.bindResources(event.getServer().getResourceManager());
+        adapter.bindRegistryAccess(event.getServer().registryAccess());
         adapter.bindRecipes(event.getServer().getRecipeManager().getRecipes());
     }
 

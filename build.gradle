@@ -253,11 +253,27 @@ tasks.register('iconTest', JavaExec) {
     args = [layout.buildDirectory.dir('icon-test').get().asFile.absolutePath]
 }
 
+/**
+ * Runs the category-coverage checks.
+ *
+ * <p>This is the cheapest test in the project and it covers the most damaging class of defect found so
+ * far: nine categories were selectable and collected by nothing, so a user got less than they asked for
+ * and no way to tell. The check is that every declared category is accounted for by the registry table or
+ * by a named dedicated collector.
+ */
+tasks.register('categoryTest', JavaExec) {
+    description = 'Checks that every declared category has a collector.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.CategoryTest'
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
     group = 'verification'
     dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest',
             'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest', 'scaleTest',
-            'tagTest', 'lootTableTest', 'iconTest'
+            'tagTest', 'lootTableTest', 'iconTest', 'categoryTest'
 }

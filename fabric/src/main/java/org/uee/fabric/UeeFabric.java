@@ -31,11 +31,18 @@ public final class UeeFabric implements ModInitializer {
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             adapter.bindResources(server.getResourceManager());
             adapter.bindRecipes(server.getRecipeManager().getRecipes());
+            // Data-loaded registries -- enchantments, biomes, damage types -- only exist while a server
+            // does, so this is the moment they become collectable.
+            adapter.bindRegistryAccess(server.registryAccess());
         });
 
         if (FabricLoader.getInstance().getEnvironmentType() == EnvType.CLIENT) {
             ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
                 adapter.bindResources(client.getResourceManager());
+                // The client's own registry access: an integrated server holds the data-loaded
+                // registries, and a client connected to a server has its synced copy.
+                adapter.bindRegistryAccess(client.level == null ? null
+                        : client.level.registryAccess());
                 if (client.getConnection() != null) {
                     adapter.bindRecipes(client.getConnection().getRecipeManager().getRecipes());
                 }
