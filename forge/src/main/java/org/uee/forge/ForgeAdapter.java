@@ -1,5 +1,6 @@
 package org.uee.forge;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -88,8 +89,8 @@ public final class ForgeAdapter extends AbstractMinecraftAdapter {
                     info.getModId(),
                     "forge",
                     mcVersion,
-                    info.getAuthors().map(a -> a.split(",")).orElse(new String[0]),
-                    info.getLicense().orElse(null),
+                    authorsOf(info),
+                    licenseOf(info),
                     info.getDescription(),
                     dependenciesOf(info),
                     new String[0],
@@ -101,7 +102,7 @@ public final class ForgeAdapter extends AbstractMinecraftAdapter {
 
     /** Maps declared dependencies, distinguishing only required from optional. */
     private static Dependency[] dependenciesOf(IModInfo info) {
-        List<IModInfo.ModVersion> versions = info.getDependencies();
+        List<? extends IModInfo.ModVersion> versions = info.getDependencies();
         if (versions == null || versions.isEmpty()) {
             return new Dependency[0];
         }
@@ -113,6 +114,24 @@ public final class ForgeAdapter extends AbstractMinecraftAdapter {
                     dep.isMandatory() ? Dependency.Kind.REQUIRED : Dependency.Kind.OPTIONAL);
         }
         return out;
+    }
+
+    /**
+     * A mod's authors.
+     *
+     * <p>Read from the mod's own declaration rather than an accessor: {@code IModInfo} exposes the
+     * metadata the loader needs and not the free-form fields, so the config interface is how authors
+     * are reached — the same route the NeoForge adapter takes, since the two share this type.
+     */
+    private static String[] authorsOf(IModInfo info) {
+        return info.getConfig().<String>getConfigElement("authors")
+                .map(authors -> authors.split("\\s*,\\s*"))
+                .orElse(new String[0]);
+    }
+
+    /** A mod's declared license, or {@code null}. */
+    private static String licenseOf(IModInfo info) {
+        return info.getConfig().<String>getConfigElement("license").orElse(null);
     }
 
     /** Resolves a mod's container file, or {@code null} when it cannot be located. */
