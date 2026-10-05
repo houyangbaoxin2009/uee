@@ -224,6 +224,21 @@ way vanilla does: stacked by pack priority, where a pack's `replace` discards ev
 It records the items produced plus the tags and tables referenced, and references are not expanded.
 Vanilla itself parses these in parallel, which is why collection spreads across threads.
 
+★ **并行只用在「制备」，发射仍单线程** —— 记录要按序写进分片缓冲，两个线程追加同一分片会交错损坏。
+所以 worker 只读文件、解析、建模型，**调用线程按输入顺序发射**。
+
+★ **`threads` 只降不升**：适配器未声明"注册表已冻结"、或**开启了图标**时，自动退化为单线程
+（图标渲染走客户端渲染管线，不是线程安全的）。配置只能让导出更保守，不能让它越过安全边界。
+
+★ **Parallelism is for preparation only; emitting stays single-threaded**, because records are appended
+to per-shard buffers in sequence and two threads appending to one shard would interleave. Workers read,
+parse and build; the calling thread emits in input order.
+
+★ **`threads` can only be lowered, never raised past what is safe**: collection falls back to one thread
+when the adapter has not declared its registries frozen, or when icons are enabled — rendering goes
+through the client's render pipeline, which is not thread-safe. Configuration can make an export more
+conservative; it cannot move it past a boundary.
+
 ★ **The default category set is pure collected content** — it does not straddle the
 collection/analysis boundary, so `kinds = ["common"]` means one thing even beside `analyze = false`.
 
