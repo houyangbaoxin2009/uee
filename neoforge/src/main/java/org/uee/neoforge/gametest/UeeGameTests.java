@@ -190,6 +190,57 @@ public final class UeeGameTests {
      * isolation; this checks that the real collection on real datapacks goes through it.
      */
     @GameTest(template = "empty", timeoutTicks = 600)
+    public static void registryCollectionDoesNotDependOnThreadCount(GameTestHelper helper) {
+        LoaderAdapter adapter = Uee.adapter();
+        Set<ElementKind> wanted = EnumSet.of(ElementKind.ITEM, ElementKind.BLOCK,
+                ElementKind.ENTITY, ElementKind.EFFECT, ElementKind.BIOME);
+
+        RecordingSink single = new RecordingSink();
+        adapter.collectRegistries(ExportConfig.builder().kinds(ElementKind.ITEM, ElementKind.BLOCK,
+                ElementKind.ENTITY, ElementKind.EFFECT, ElementKind.BIOME).threads(1).build(),
+                wanted, single);
+
+        RecordingSink many = new RecordingSink();
+        adapter.collectRegistries(ExportConfig.builder().kinds(ElementKind.ITEM, ElementKind.BLOCK,
+                ElementKind.ENTITY, ElementKind.EFFECT, ElementKind.BIOME).threads(8).build(),
+                wanted, many);
+
+        helper.assertTrue(!single.items.isEmpty(),
+                "one thread collected no items at all");
+        // The registries are the big categories, so a mismatch here is a real ordering fault rather
+        // than a rounding difference.
+        helper.assertTrue(single.items.size() == many.items.size(),
+                "items: " + single.items.size() + " on one thread vs " + many.items.size()
+                        + " on eight");
+        helper.assertTrue(recordKeys(single).equals(recordKeys(many)),
+                "the registry record sequence depends on the thread count");
+        helper.assertTrue(single.blocks.size() == many.blocks.size()
+                        && single.entities.size() == many.entities.size(),
+                "blocks or entities differ between thread counts");
+        helper.assertTrue(single.failures.size() == many.failures.size(),
+                "the failure count differs between thread counts: " + single.failures.size() + " vs "
+                        + many.failures.size());
+
+        helper.succeed();
+    }
+
+    /** The identity and order of everything a sink recorded, for comparing two runs. */
+    private static List<String> recordKeys(RecordingSink sink) {
+        List<String> keys = new ArrayList<>();
+        for (ItemElement e : sink.items) {
+            keys.add("item:" + e.registryName());
+        }
+        for (BlockElement e : sink.blocks) {
+            keys.add("block:" + e.registryName());
+        }
+        for (EntityElement e : sink.entities) {
+            keys.add("entity:" + e.registryName());
+        }
+        keys.addAll(sink.generics);
+        return keys;
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 600)
     public static void datapackCollectionDoesNotDependOnThreadCount(GameTestHelper helper) {
         LoaderAdapter adapter = Uee.adapter();
         Set<ElementKind> wanted = EnumSet.of(ElementKind.TAG, ElementKind.LOOT_TABLE);

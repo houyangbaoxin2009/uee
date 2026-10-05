@@ -231,6 +231,9 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
      */
     private volatile Translator translator;
 
+    /** Guards the one-time construction of {@link #translator}. See {@link #translator()}. */
+    private final Object translatorLock = new Object();
+
     /** Container inspections, filled on first use. */
     private final Map<String, ModContainerScanner.ContainerInfo> containers = new HashMap<>();
     /** Mixin configs read from those containers, filled on first use. */
@@ -285,21 +288,12 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
 
     private void collectItems(ExportConfig config, ElementSink sink) {
         Registry<Item> registry = BuiltInRegistries.ITEM;
-        for (ResourceLocation id : registry.keySet()) {
-            if (!config.acceptsNamespace(id.getNamespace())) {
-                continue;
-            }
+        collectRegistry(config, ElementKind.ITEM, registry.keySet(), sink, id -> {
             Item item = registry.get(id);
-            if (item == null) {
-                continue;
-            }
-            try {
-                sink.item(buildItem(id, item, config));
-            } catch (Throwable t) {
-                // Isolation: one malformed item must not end the export.
-                sink.failure(ElementKind.ITEM, id.toString(), t);
-            }
-        }
+            // A null means the id is no longer held, which is a decision not to record rather than a
+            // failure. Isolation of a malformed element is handled by the caller of this lambda.
+            return item == null ? null : new Prepared.Item(buildItem(id, item, config));
+        });
     }
 
     private ItemElement buildItem(ResourceLocation id, Item item, ExportConfig config) {
@@ -342,62 +336,63 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
      * forward-looking, nothing here can act on it, and a warning nobody can clear is one everybody
      * learns to ignore.
      */
-    @SuppressWarnings("deprecation")
     private void collectBlocks(ExportConfig config, ElementSink sink) {
-        Registry<Block> registry = BuiltInRegistries.BLOCK;
-        for (ResourceLocation id : registry.keySet()) {
-            if (!config.acceptsNamespace(id.getNamespace())) {
-                continue;
-            }
-            Block block = registry.get(id);
-            if (block == null) {
-                continue;
-            }
-            try {
-                String key = block.getDescriptionId();
-                sink.block(new BlockElement(
-                        id.toString(),
-                        id.getNamespace(),
-                        translator().translate(key, Translator.ZH_CN),
-                        translator().translate(key, Translator.EN_US),
-                        block.defaultDestroyTime(),
-                        block.getExplosionResistance(),
-                        block.defaultBlockState().getLightEmission(),
-                        block.asItem() != net.minecraft.world.item.Items.AIR,
-                        String.valueOf(block.defaultBlockState().getSoundType()),
-                        new String[0]));
-            } catch (Throwable t) {
-                sink.failure(ElementKind.BLOCK, id.toString(), t);
-            }
-        }
+        collectRegistry(config, ElementKind.BLOCK, BuiltInRegistries.BLOCK.keySet(), sink, id -> {
+            net.minecraft.world.level.block.Block block = BuiltInRegistries.BLOCK.get(id);
+            return block == null ? null : new Prepared.Block(buildBlock(id, block));
+        });
+    }
+
+    /**
+     * Builds one block record.
+     *
+     * <p>Three accessors used here are marked deprecated in this Minecraft version and have no
+     * replacement in it: the context-aware variants that supersede them
+     * ({@code getSoundType(LevelReader, BlockPos, Entity)} and friends) arrive in a later release. UEE
+     * also has no position to supply even if they existed, because an export runs over the whole
+     * registry rather than at a place in a world.
+     *
+     * <p>Suppressed deliberately rather than left to warn on every build: the deprecation is
+     * forward-looking, nothing here can act on it, and a warning nobody can clear is one everybody
+     * learns to ignore.
+     */
+    @SuppressWarnings("deprecation")
+    private BlockElement buildBlock(ResourceLocation id, Block block) {
+        String key = block.getDescriptionId();
+        return new BlockElement(
+                id.toString(),
+                id.getNamespace(),
+                translator().translate(key, Translator.ZH_CN),
+                translator().translate(key, Translator.EN_US),
+                block.defaultDestroyTime(),
+                block.getExplosionResistance(),
+                block.defaultBlockState().getLightEmission(),
+                block.asItem() != net.minecraft.world.item.Items.AIR,
+                String.valueOf(block.defaultBlockState().getSoundType()),
+                new String[0]);
     }
 
     // ---------------------------------------------------------------- entity collection
 
     private void collectEntities(ExportConfig config, ElementSink sink) {
-        for (ResourceLocation id : BuiltInRegistries.ENTITY_TYPE.keySet()) {
-            if (!config.acceptsNamespace(id.getNamespace())) {
-                continue;
-            }
+        collectRegistry(config, ElementKind.ENTITY, BuiltInRegistries.ENTITY_TYPE.keySet(), sink, id -> {
             EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(id);
             if (type == null) {
-                continue;
+                return null;
             }
-            try {
-                String key = type.getDescriptionId();
-                MobCategory category = type.getCategory();
-                sink.entity(new EntityElement(
-                        id.toString(),
-                        id.getNamespace(),
-                        key,
-                        translator().translate(key, Translator.ZH_CN),
-                        translator().translate(key, Translator.EN_US),
-                        category == null ? null : category.getName(),
-                        config.icons() ? renderEntityIcon(type, 128) : null));
-            } catch (Throwable t) {
-                sink.failure(ElementKind.ENTITY, id.toString(), t);
-            }
-        }
+            String key = type.getDescriptionId();
+            MobCategory category = type.getCategory();
+            return new Prepared.Entity(new EntityElement(
+                    id.toString(),
+                    id.getNamespace(),
+                    key,
+                    translator().translate(key, Translator.ZH_CN),
+                    translator().translate(key, Translator.EN_US),
+                    category == null ? null : category.getName(),
+                    // Safe to call here only because `parallelism` refuses to use workers when icons are
+                    // on: the render pipeline is not thread-safe, and this is where it would be reached.
+                    config.icons() ? renderEntityIcon(type, 128) : null));
+        });
     }
 
     // ---------------------------------------------------------------- other registries
@@ -415,20 +410,13 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         if (!wanted.contains(kind)) {
             return;
         }
-        for (ResourceLocation id : registry.keySet()) {
-            if (!config.acceptsNamespace(id.getNamespace())) {
-                continue;
-            }
-            try {
-                String key = id.toLanguageKey(kind.singular());
-                sink.generic(kind, id.getNamespace(), id.toString(),
-                        translator().translate(key, Translator.ZH_CN),
-                        translator().translate(key, Translator.EN_US),
-                        new String[0], new String[0]);
-            } catch (Throwable t) {
-                sink.failure(kind, id.toString(), t);
-            }
-        }
+        collectRegistry(config, kind, registry.keySet(), sink, id -> {
+            String key = id.toLanguageKey(kind.singular());
+            return new Prepared.Generic(kind, id.getNamespace(), id.toString(),
+                    translator().translate(key, Translator.ZH_CN),
+                    translator().translate(key, Translator.EN_US),
+                    new String[0], new String[0]);
+        });
     }
 
     private void forEachBiome(Collection<ElementKind> wanted, ExportConfig config,
@@ -440,20 +428,13 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         if (registry == null) {
             return;
         }
-        for (ResourceLocation id : registry.keySet()) {
-            if (!config.acceptsNamespace(id.getNamespace())) {
-                continue;
-            }
-            try {
-                String key = id.toLanguageKey("biome");
-                sink.generic(ElementKind.BIOME, id.getNamespace(), id.toString(),
-                        translator().translate(key, Translator.ZH_CN),
-                        translator().translate(key, Translator.EN_US),
-                        new String[0], new String[0]);
-            } catch (Throwable t) {
-                sink.failure(ElementKind.BIOME, id.toString(), t);
-            }
-        }
+        collectRegistry(config, ElementKind.BIOME, registry.keySet(), sink, id -> {
+            String key = id.toLanguageKey("biome");
+            return new Prepared.Generic(ElementKind.BIOME, id.getNamespace(), id.toString(),
+                    translator().translate(key, Translator.ZH_CN),
+                    translator().translate(key, Translator.EN_US),
+                    new String[0], new String[0]);
+        });
     }
 
     /**
@@ -492,9 +473,19 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
     protected Translator translator() {
         Translator current = translator;
         if (current == null) {
-            net.minecraft.server.packs.resources.ResourceManager manager = resources;
-            current = manager == null ? Translator.none() : new ResourceManagerTranslator(manager);
-            translator = current;
+            // Double-checked, and the check is not an optimisation: building the tables reads every
+            // namespace's language files into two hash maps, so two workers racing here would each build
+            // a full copy and throw one away. Correct either way, but wasteful enough to matter now that
+            // preparation runs on several threads -- and the waste would be invisible, showing up only as
+            // memory that the fenced live-set measurement does not attribute to anything.
+            synchronized (translatorLock) {
+                current = translator;
+                if (current == null) {
+                    net.minecraft.server.packs.resources.ResourceManager manager = resources;
+                    current = manager == null ? Translator.none() : new ResourceManagerTranslator(manager);
+                    translator = current;
+                }
+            }
         }
         return current;
     }
@@ -512,9 +503,31 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
      */
     private sealed interface Prepared {
 
-        /** A record to write. */
-        record Emit(ElementKind kind, String namespace, String key, String[] values, String[] extra)
-                implements Prepared {
+        /** One item record. */
+        record Item(org.uee.model.ItemElement element) implements Prepared {
+        }
+
+        /** One block record. */
+        record Block(org.uee.model.BlockElement element) implements Prepared {
+        }
+
+        /** One entity record. */
+        record Entity(org.uee.model.EntityElement element) implements Prepared {
+        }
+
+        /** One recipe record. */
+        record Recipe(org.uee.model.RecipeElement element) implements Prepared {
+        }
+
+        /**
+         * A record with no dedicated sink method, written through the generic channel.
+         *
+         * <p>Carries the display names because some generic categories have them — an effect's
+         * translation key is real data — and the ones that do not pass null rather than the record
+         * pretending every category is nameless.
+         */
+        record Generic(ElementKind kind, String namespace, String key, String nameZh, String nameEn,
+                String[] values, String[] extra) implements Prepared {
         }
 
         /** A problem with one item, reported as a failure against the category. */
@@ -526,27 +539,106 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         }
     }
 
-    /** Makes the sink calls for one prepared item. Always called on the collecting thread. */
+    /** Makes the sink call for one prepared item. Always called on the collecting thread. */
     private static void emit(ElementSink sink, Prepared prepared) {
         switch (prepared) {
-            case Prepared.Emit e ->
-                    sink.generic(e.kind(), e.namespace(), e.key(), null, null, e.values(), e.extra());
+            case Prepared.Item p -> sink.item(p.element());
+            case Prepared.Block p -> sink.block(p.element());
+            case Prepared.Entity p -> sink.entity(p.element());
+            case Prepared.Recipe p -> sink.recipe(p.element());
+            case Prepared.Generic e -> sink.generic(e.kind(), e.namespace(), e.key(), e.nameZh(),
+                    e.nameEn(), e.values(), e.extra());
             case Prepared.Bad b -> sink.failure(b.kind(), b.name(), b.error());
             case Prepared.Note n -> org.uee.Uee.reportFailure(n.message(), n.error());
         }
     }
 
     /**
-     * Runs a datapack collection pass across worker threads, in configuration order.
+     * How many workers collection may use, which is often not what the configuration asked for.
+     *
+     * <h2>Two conditions override the setting</h2>
+     *
+     * <p>The first is the adapter's own declaration. {@code registry_frozen} says the registries are
+     * frozen and safe to read off the thread that owns them, and an adapter that has not declared it is
+     * saying the opposite — so running its collection across workers would contradict the promise it
+     * made, and a fault that only appears under load is the hardest kind to trace back to a decision
+     * made here. The same declaration already gates running the whole export off the server thread, so
+     * this reuses a promise the adapter has already made rather than inventing a second one.
+     *
+     * <p>The second is icon rendering. Rendering goes through the client's render pipeline, which is not
+     * thread-safe and cannot be made so from here. Icons are not implemented yet — the render hooks
+     * return null — so this guards a path that does not exist rather than one that is broken. It is
+     * written now anyway because the trap would be invisible later: an export with icons enabled would
+     * start corrupting render state intermittently, and nothing about the icon code would be at fault.
+     * Icons are off by default and cost a single-threaded pass only when they are on.
+     */
+    private int parallelism(ExportConfig config) {
+        if (config.threads() <= 1) {
+            return 1;
+        }
+        if (!supports(CAP_REGISTRY_FROZEN)) {
+            return 1;
+        }
+        return config.icons() ? 1 : config.threads();
+    }
+
+    /**
+     * Prepares every key on worker threads and emits the results in order.
      *
      * <p>Workers prepare, this thread emits, and the results arrive in the order the keys were given —
-     * so the output does not depend on the thread count. Threads come from the configuration and are
-     * only used when there is enough work to be worth it; see {@link OrderedWork}.
+     * so the output does not depend on the thread count. Threads come from {@link #parallelism}.
+     */
+    private void collectKeys(ExportConfig config, ElementKind kind, List<String> keys, ElementSink sink,
+            java.util.function.Function<String, Prepared> prepare) {
+        OrderedWork.run(keys, parallelism(config), "collect", key -> {
+            try {
+                return prepare.apply(key);
+            } catch (Throwable t) {
+                // A failure that happens while preparing is reported against the item it belongs to, on
+                // the emitting thread, so one malformed element cannot end the export.
+                return new Prepared.Bad(kind, key, t);
+            }
+        }, prepared -> {
+            if (prepared != null) {
+                emit(sink, prepared);
+            }
+        });
+    }
+
+    /**
+     * Collects a registry-backed category.
+     *
+     * <p>The keys are sorted before any work starts, for two reasons that happen to agree: the output
+     * must be a function of the data and not of a hash map's iteration order, and the ordering guarantee
+     * the parallel skeleton provides is only meaningful if the input order is itself defined.
+     *
+     * <p>A prepare step returning {@code null} means the entry should not be recorded — an id the
+     * registry no longer holds, or a shape this build does not describe. That is a decision rather than a
+     * failure, so it produces no record and no failure report.
+     */
+    private void collectRegistry(ExportConfig config, ElementKind kind,
+            java.util.Collection<ResourceLocation> ids, ElementSink sink,
+            java.util.function.Function<ResourceLocation, Prepared> prepare) {
+        List<String> keys = new ArrayList<>(ids.size());
+        for (ResourceLocation id : ids) {
+            if (config.acceptsNamespace(id.getNamespace())) {
+                keys.add(id.toString());
+            }
+        }
+        keys.sort(null);
+        collectKeys(config, kind, keys, sink, key -> prepare.apply(ResourceLocation.parse(key)));
+    }
+
+    /**
+     * Runs a datapack collection pass across worker threads, in configuration order.
+     *
+     * <p>Kept separate from {@link #collectKeys} because a datapack pass may produce several results for
+     * one key — a record plus a note about a file that could not be read.
      */
     private void collectPrepared(ExportConfig config, List<String> orderedKeys,
             java.util.function.Function<String, List<Prepared>> prepare, ElementSink sink) {
-        OrderedWork.run(orderedKeys, OrderedWork.usefulThreads(config.threads(), orderedKeys.size()),
-                "collect", prepare, prepared -> prepared.forEach(p -> emit(sink, p)));
+        OrderedWork.run(orderedKeys, parallelism(config), "collect", prepare,
+                prepared -> prepared.forEach(p -> emit(sink, p)));
     }
 
     /** Reads a resource to its end. */
@@ -618,8 +710,8 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
                 if (merged == null) {
                     return out;
                 }
-                out.add(new Prepared.Emit(ElementKind.TAG, id.getNamespace(),
-                        TagFile.pathOf(id.getPath()), merged.membersAsWritten(),
+                out.add(new Prepared.Generic(ElementKind.TAG, id.getNamespace(),
+                        TagFile.pathOf(id.getPath()), null, null, merged.membersAsWritten(),
                         new String[] {
                                 // `type` is recorded because it is not implied by the id: c:gems exists as
                                 // an item tag and as a block tag in different packs, and merging those two
@@ -719,8 +811,8 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
                     withFolder[extra.length + 1] = folder;
                     extra = withFolder;
                 }
-                return List.of(new Prepared.Emit(ElementKind.LOOT_TABLE, id.getNamespace(),
-                        LootTableFile.pathOf(id.getPath()), table.itemArray(), extra));
+                return List.of(new Prepared.Generic(ElementKind.LOOT_TABLE, id.getNamespace(),
+                        LootTableFile.pathOf(id.getPath()), null, null, table.itemArray(), extra));
             } catch (Throwable t) {
                 return List.of(new Prepared.Bad(ElementKind.LOOT_TABLE, id.toString(), t));
             }
@@ -734,21 +826,29 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         if (holders == null || holders.isEmpty()) {
             return;
         }
+        // Recipes arrive as a collection rather than a registry, so the key list is built here. Sorted
+        // for the same two reasons the registry pass sorts: a defined input order is what makes the
+        // ordering guarantee mean anything, and the output must not depend on a map's iteration order.
+        Map<String, RecipeHolder<?>> byId = new HashMap<>(holders.size() * 2);
+        List<String> keys = new ArrayList<>(holders.size());
         for (RecipeHolder<?> holder : holders) {
-            Recipe<?> recipe = holder.value();
             ResourceLocation id = holder.id();
             if (id == null || !config.acceptsNamespace(id.getNamespace())) {
                 continue;
             }
-            try {
-                RecipeElement element = buildRecipe(id, recipe);
-                if (element != null) {
-                    sink.recipe(element);
-                }
-            } catch (Throwable t) {
-                sink.failure(ElementKind.RECIPE, id.toString(), t);
+            String key = id.toString();
+            if (byId.putIfAbsent(key, holder) == null) {
+                keys.add(key);
             }
         }
+        keys.sort(null);
+        collectKeys(config, ElementKind.RECIPE, keys, sink, key -> {
+            RecipeElement element =
+                    buildRecipe(ResourceLocation.parse(key), byId.get(key).value());
+            // A null means this build does not describe that recipe shape; not recording it is the
+            // decision, and the export continues.
+            return element == null ? null : new Prepared.Recipe(element);
+        });
     }
 
     /**
