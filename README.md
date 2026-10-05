@@ -202,7 +202,7 @@ and no more for the dominant purpose**:
 | 方面 / Aspect | 默认 / Default | 为什么 / Why |
 | --- | --- | --- |
 | 格式 / format | `json` | 通用可读，无需解释 / readable anywhere |
-| 类目 / categories | 11 个：mods items blocks entities recipes **tags** **loot_tables** effects fluids enchantments creative_tabs | 百科页要引用的注册表与分组全在里面，跑一次就够 / everything a wiki entry references |
+| 类目 / categories | 13 个：mods items blocks entities recipes **tags** **loot_tables** **langs** effects fluids enchantments creative_tabs sounds particles attributes biomes | 百科页要引用的注册表与分组全在里面，跑一次就够 / everything a wiki entry references |
 | 分析 / analysis | 开，**独立成包** | n 个数据包 + **1 个**分析包；数据那半可单独交给下游 / n data packages plus one analysis bundle |
 | 不导 / left out | biomes dimensions structures sounds particles attributes damage_types | 大、少改、物品页用不到；一个词可加回 / large, rarely changed, one token away |
 
@@ -223,6 +223,15 @@ way vanilla does: stacked by pack priority, where a pack's `replace` discards ev
 ★ **`loot_tables` is single-winner**, unlike a tag: a pack shipping the same id replaces the one below it.
 It records the items produced plus the tags and tables referenced, and references are not expanded.
 Vanilla itself parses these in parallel, which is why collection spreads across threads.
+
+★ **`langs` 只在客户端有效**：语言文件在 `assets/` 下，而专用服务器的资源管理器只看得见 `data/`。
+服务器上该类别**明确报告**而不是静默为空——否则「没有翻译」和「包没带翻译」无从区分。
+
+★ **`langs` works on a client only**: language files live under `assets/`, which a dedicated server's
+resource manager cannot see. On a server the category reports that rather than going quiet, because
+otherwise "no translations" and "the pack has none" are indistinguishable.
+
+★ **每个声明的类目都必有采集器**，由 `categoryTest` 守着——曾经有 9 个类目可选却什么都产不出。
 
 ★ **并行只用在「制备」，发射仍单线程** —— 记录要按序写进分片缓冲，两个线程追加同一分片会交错损坏。
 所以 worker 只读文件、解析、建模型，**调用线程按输入顺序发射**。
