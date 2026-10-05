@@ -16,6 +16,10 @@ import org.uee.analysis.AnalysisEngine;
 import org.uee.analysis.AnalysisOutput;
 import org.uee.analysis.Finding;
 import org.uee.config.ExportConfig;
+import org.uee.analysis.DeclarativeAnalysis;
+import org.uee.datapack.DatapackCatalog;
+import org.uee.datapack.StrategyDefinition;
+import org.uee.datapack.TargetDefinition;
 import org.uee.model.BlockElement;
 import org.uee.model.DebugSection;
 import org.uee.model.ElementKind;
@@ -59,6 +63,9 @@ public final class Exporter implements ElementSink {
     /** Namespace used for collection-wide sections (mod list, environment debug) that shard by themselves. */
     public static final String GLOBAL_NAMESPACE = "_global";
 
+    /** Directory that holds datapack-target output, one sub-directory per target. */
+    public static final String TARGETS_DIR = "targets";
+
     private final LoaderAdapter adapter;
     private final ExportConfig config;
     private final Path root;
@@ -68,6 +75,8 @@ public final class Exporter implements ElementSink {
     /** Facts collection observed, for the analyses to read. */
     private final AnalysisContext context;
     private final AnalysisEngine engine;
+    /** Datapack targets this run writes, resolved from the catalog. */
+    private final List<TargetDefinition> targets;
     private long totalRecords;
     private int findings;
     private boolean closed;
@@ -78,14 +87,51 @@ public final class Exporter implements ElementSink {
 
     /** Runs with a specific analysis set, for tests and for a caller that wants a subset. */
     public Exporter(LoaderAdapter adapter, ExportConfig config, Path root, AnalysisEngine engine) {
+        this(adapter, config, root, engine, DatapackCatalog.empty());
+    }
+
+    /**
+     * Runs with a specific analysis set and datapack catalog.
+     *
+     * <p>The catalog is passed in rather than built here because it is the same catalog the other
+     * interfaces resolved their flow against, and rebuilding it would risk the command surface and
+     * the pipeline disagreeing about which definitions are active.
+     */
+    public Exporter(LoaderAdapter adapter, ExportConfig config, Path root, AnalysisEngine engine,
+            DatapackCatalog catalog) {
         this.adapter = adapter;
         this.config = config;
         this.root = root;
-        this.engine = config.analyze() ? engine : AnalysisEngine.none();
+        // Datapack rules are added to whatever engine the caller supplied, so a caller that wants a
+        // subset of the built-in checks still gets the pack's rules.
+        AnalysisEngine base = config.analyze() ? engine : AnalysisEngine.none();
+        List<StrategyDefinition> strategies = config.datapacks()
+                ? catalog.resolveStrategies(new ArrayList<>(config.strategies()))
+                : List.of();
+        this.engine = strategies.isEmpty() ? base : withDeclarative(base, strategies);
+        this.targets = config.datapacks()
+                ? catalog.resolveTargets(new ArrayList<>(config.targets()))
+                : List.of();
         // The gathering half of the decoupling: collectors write facts here and never learn what
         // reads them.
         this.context = new AnalysisContext(adapter.mods(), adapter.containers(),
                 adapter.mixinConfigs(), config.includePaths());
+    }
+
+    /**
+     * Adds the datapack rules to an engine, once per stage.
+     *
+     * <p>The declarative check is registered twice because its rules divide along the same
+     * pre/post-collection seam the built-in checks use — a rule about mod presence is meaningful
+     * before collection, a rule about element counts is not. Registering both lets the engine
+     * schedule each half correctly rather than forcing one stage on all of it.
+     */
+    private static AnalysisEngine withDeclarative(AnalysisEngine base,
+            List<StrategyDefinition> strategies) {
+        List<Analysis> all = new ArrayList<>(base.analyses());
+        all.add(DeclarativeAnalysis.pre(strategies));
+        all.add(DeclarativeAnalysis.post(strategies));
+        return AnalysisEngine.of(all);
     }
 
     /** Runs a complete export and returns the report. */
@@ -189,7 +235,7 @@ public final class Exporter implements ElementSink {
         List<ExportReport.Artifact> list = new ArrayList<>(shards.size());
         for (Shard s : shards.values()) {
             list.add(new ExportReport.Artifact(s.namespace(), s.kind().singular(), s.format(),
-                    s.file(), s.bytes(), s.records()));
+                    s.file(), s.bytes(), s.records(), s.target()));
         }
         return list;
     }
@@ -225,39 +271,39 @@ public final class Exporter implements ElementSink {
 
     @Override
     public void mod(ModElement e) {
-        route(GLOBAL_NAMESPACE, ElementKind.MOD, w -> w.mod(e));
+        route(GLOBAL_NAMESPACE, ElementKind.MOD, e.id(), null, w -> w.mod(e));
     }
 
     @Override
     public void item(ItemElement e) {
-        route(e.namespace(), ElementKind.ITEM, w -> w.item(e));
+        route(e.namespace(), ElementKind.ITEM, e.registryName(), e.tags(), w -> w.item(e));
     }
 
     @Override
     public void entity(EntityElement e) {
-        route(e.namespace(), ElementKind.ENTITY, w -> w.entity(e));
+        route(e.namespace(), ElementKind.ENTITY, e.registryName(), null, w -> w.entity(e));
     }
 
     @Override
     public void block(BlockElement e) {
-        route(e.namespace(), ElementKind.BLOCK, w -> w.block(e));
+        route(e.namespace(), ElementKind.BLOCK, e.registryName(), e.tags(), w -> w.block(e));
     }
 
     @Override
     public void recipe(RecipeElement e) {
-        route(e.namespace(), ElementKind.RECIPE, w -> w.recipe(e));
+        route(e.namespace(), ElementKind.RECIPE, e.id(), null, w -> w.recipe(e));
     }
 
     @Override
     public void generic(ElementKind kind, String namespace, String key, String nameZh,
             String nameEn, String[] listValues, String[] extra) {
-        route(namespace, kind,
+        route(namespace, kind, key, listValues,
                 w -> w.generic(kind, namespace, key, nameZh, nameEn, listValues, extra));
     }
 
     @Override
     public void debug(DebugSection section) {
-        route(GLOBAL_NAMESPACE, ElementKind.DEBUG, w -> w.debug(section));
+        route(GLOBAL_NAMESPACE, ElementKind.DEBUG, section.name(), null, w -> w.debug(section));
     }
 
     @Override
@@ -273,15 +319,27 @@ public final class Exporter implements ElementSink {
      * carried their own filter check, and the gathering half of the decoupling existed in only one of
      * them — a new category would have silently stopped feeding the analyses.
      */
-    private void route(String namespace, ElementKind kind, WriteAction action) {
+    private void route(String namespace, ElementKind kind, String registryName, String[] tags,
+            WriteAction action) {
         if (!config.acceptsNamespace(namespace) && !GLOBAL_NAMESPACE.equals(namespace)) {
             context.filter(kind, namespace);
             return;
         }
         // The whole of what collection tells the analyses. Nothing downstream needs to know an
-        // analysis exists.
+        // analysis exists. Observed once, before targets: a target is another copy of the same
+        // record, not another record, so counting it twice would inflate the coverage report.
         context.observe(kind, namespace);
+
         offer(namespace, kind, action);
+
+        // Targets are additive: the category's own output is unaffected, so enabling a target can
+        // never silently truncate an export someone already depends on.
+        for (TargetDefinition target : targets) {
+            if (target.category() != kind || !target.accepts(registryName, namespace, tags)) {
+                continue;
+            }
+            offer(namespace, kind, target.shardKey(), action);
+        }
     }
 
     // ---------------------------------------------------------------- internals
@@ -303,15 +361,21 @@ public final class Exporter implements ElementSink {
      * output format — no second traversal, no retained model.
      */
     private void offer(String namespace, ElementKind kind, WriteAction action) {
+        offer(namespace, kind, "", action);
+    }
+
+    private void offer(String namespace, ElementKind kind, String target, WriteAction action) {
         for (String format : requestedFormats()) {
             if (!WriterFactory.supports(format, kind, config)) {
                 continue;
             }
-            Shard shard = shard(namespace, kind, format);
+            Shard shard = shard(namespace, kind, format, target);
             action.apply(shard.writer());
             shard.countRecord();
         }
-        totalRecords++;
+        if (target.isEmpty()) {
+            totalRecords++;
+        }
         if ((totalRecords & 0xFF) == 0) {
             flushAll();
         }
@@ -321,13 +385,18 @@ public final class Exporter implements ElementSink {
         return config.formats();
     }
 
-    private Shard shard(String namespace, ElementKind kind, String format) {
-        String key = namespace + '|' + kind.plural() + '|' + format;
+    private Shard shard(String namespace, ElementKind kind, String format, String target) {
+        String key = target.isEmpty()
+                ? namespace + '|' + kind.plural() + '|' + format
+                : namespace + '|' + kind.plural() + '|' + format + "|target:" + target;
         Shard existing = shards.get(key);
         if (existing != null) {
             return existing;
         }
-        // Layout has three independent choices, applied in order:
+        // Layout has four independent choices, applied in order:
+        //   0. a target's output goes under its own root, so it cannot collide with the category's
+        //      own file names — a target is a shard of the same category, so the directories, not the
+        //      file names, are what keep them apart;
         //   1. analysis output may live in a sibling directory, so the data half can be handed to one
         //      consumer (a wiki importer) without the diagnostics riding along;
         //   2. each category may get its own directory;
@@ -335,14 +404,24 @@ public final class Exporter implements ElementSink {
         Path base = kind.isAnalysis() && config.analysisSeparate()
                 ? root.resolveSibling(root.getFileName() + "-analysis")
                 : root;
+        if (!target.isEmpty()) {
+            base = base.resolve(TARGETS_DIR).resolve(sanitise(target));
+        }
         Path dir = config.packagePerKind() ? base.resolve(kind.plural()) : base;
         if (config.shardByNamespace()) {
             dir = dir.resolve(namespace);
         }
         Writer writer = WriterFactory.create(format, config, pool);
-        Shard created = new Shard(namespace, kind, format, dir, writer, pool, watermarkBytes());
+        Shard created = new Shard(namespace, kind, format, target, dir, writer, pool,
+                watermarkBytes());
         shards.put(key, created);
         return created;
+    }
+
+    /** Turns a target key into one safe path segment. */
+    private static String sanitise(String target) {
+        String cleaned = target.replace(':', '_').replace('/', '_').replace('\\', '_');
+        return cleaned.isEmpty() ? "target" : cleaned;
     }
 
     private long watermarkBytes() {

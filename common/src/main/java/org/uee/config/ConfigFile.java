@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -62,7 +63,8 @@ public final class ConfigFile {
             "icons", "pretty", "incremental", "include_paths",
             "shard_by_namespace", "shard_size", "memory_limit_mb", "threads",
             "include_namespaces", "exclude_namespaces", "exclude_mods",
-            "wiki_format", "wiki_icons", "wiki_entities", "wiki_recipes", "wiki_blocks_separate"};
+            "wiki_format", "wiki_icons", "wiki_entities", "wiki_recipes", "wiki_blocks_separate",
+            "datapacks", "global_datapacks", "global_datapack_dir", "flow", "targets", "strategies"};
 
     private final Path output;
     private final String packageName;
@@ -82,6 +84,12 @@ public final class ConfigFile {
     private final Set<String> includeNamespaces;
     private final Set<String> excludeNamespaces;
     private final Set<String> excludeMods;
+    private final Boolean datapacks;
+    private final String globalDatapacks;
+    private final String globalDatapackDir;
+    private final String flow;
+    private final Set<String> targets;
+    private final Set<String> strategies;
     private final WikiOptions.WikiFormat wikiFormat;
     private final Boolean wikiIcons;
     private final Boolean wikiEntities;
@@ -108,6 +116,12 @@ public final class ConfigFile {
         this.includeNamespaces = b.includeNamespaces;
         this.excludeNamespaces = b.excludeNamespaces;
         this.excludeMods = b.excludeMods;
+        this.datapacks = b.datapacks;
+        this.globalDatapacks = b.globalDatapacks;
+        this.globalDatapackDir = b.globalDatapackDir;
+        this.flow = b.flow;
+        this.targets = b.targets;
+        this.strategies = b.strategies;
         this.wikiFormat = b.wikiFormat;
         this.wikiIcons = b.wikiIcons;
         this.wikiEntities = b.wikiEntities;
@@ -121,9 +135,108 @@ public final class ConfigFile {
         return new Builder().build();
     }
 
+    /**
+     * The flow this description came from, or {@code null}.
+     *
+     * <p>Exposed because expanding a named flow happens one layer up, where the flow's own description
+     * becomes the layer beneath the caller's arguments. Without this the caller would have to parse the
+     * flow name twice.
+     */
+    public String flow() {
+        return flow;
+    }
+
     /** Keys found in the file that this build does not understand. */
     public List<String> unknownKeys() {
         return unknownKeys;
+    }
+
+    /**
+     * The keys this description actually sets, in canonical order.
+     *
+     * <p>Used to report what a layer will change before it is applied — which is the difference
+     * between a user understanding a flow and a user trusting one. Derived from the fields rather
+     * than stored, so it cannot fall out of step with what the description does.
+     */
+    public Set<String> setKeys() {
+        Set<String> keys = new LinkedHashSet<>();
+        if (output != null) {
+            keys.add("output");
+        }
+        if (packageName != null) {
+            keys.add("package");
+        }
+        if (formats != null) {
+            keys.add("formats");
+        }
+        if (kinds != null) {
+            keys.add("kinds");
+        }
+        if (analyze != null) {
+            keys.add("analyze");
+        }
+        if (analysisSeparate != null) {
+            keys.add("analysis_separate");
+        }
+        if (packagePerKind != null) {
+            keys.add("package_per_kind");
+        }
+        if (icons != null) {
+            keys.add("icons");
+        }
+        if (pretty != null) {
+            keys.add("pretty");
+        }
+        if (incremental != null) {
+            keys.add("incremental");
+        }
+        if (includePaths != null) {
+            keys.add("include_paths");
+        }
+        if (shardByNamespace != null) {
+            keys.add("shard_by_namespace");
+        }
+        if (shardSize != null) {
+            keys.add("shard_size");
+        }
+        if (memoryLimitMb != null) {
+            keys.add("memory_limit_mb");
+        }
+        if (threads != null) {
+            keys.add("threads");
+        }
+        if (includeNamespaces != null) {
+            keys.add("include_namespaces");
+        }
+        if (excludeNamespaces != null) {
+            keys.add("exclude_namespaces");
+        }
+        if (excludeMods != null) {
+            keys.add("exclude_mods");
+        }
+        if (wikiFormat != null || wikiIcons != null || wikiEntities != null || wikiRecipes != null
+                || wikiBlocksSeparate != null) {
+            keys.add("wiki");
+        }
+        if (datapacks != null) {
+            keys.add("datapacks");
+        }
+        if (globalDatapacks != null) {
+            keys.add("global_datapacks");
+        }
+        if (globalDatapackDir != null) {
+            keys.add("global_datapack_dir");
+        }
+        if (flow != null) {
+            keys.add("flow");
+        }
+        if (targets != null) {
+            keys.add("targets");
+        }
+        if (strategies != null) {
+            keys.add("strategies");
+        }
+        return Collections.unmodifiableSet(keys);
     }
 
     public boolean isEmpty() {
@@ -139,7 +252,9 @@ public final class ConfigFile {
                 && shardByNamespace == null && shardSize == null && memoryLimitMb == null
                 && threads == null && includeNamespaces == null && excludeNamespaces == null
                 && excludeMods == null && wikiFormat == null && wikiIcons == null
-                && wikiEntities == null && wikiRecipes == null && wikiBlocksSeparate == null;
+                && wikiEntities == null && wikiRecipes == null && wikiBlocksSeparate == null
+                && datapacks == null && globalDatapacks == null && globalDatapackDir == null
+                && flow == null && targets == null && strategies == null;
     }
 
     // ---------------------------------------------------------------- layering
@@ -212,6 +327,24 @@ public final class ConfigFile {
             for (String id : excludeMods) {
                 b.excludeMod(id);
             }
+        }
+        if (datapacks != null) {
+            b.datapacks(datapacks);
+        }
+        if (globalDatapacks != null) {
+            b.globalDatapacks(globalDatapacks);
+        }
+        if (globalDatapackDir != null) {
+            b.globalDatapackDir(globalDatapackDir);
+        }
+        if (flow != null) {
+            b.flow(flow);
+        }
+        if (targets != null) {
+            b.targets(targets);
+        }
+        if (strategies != null) {
+            b.strategies(strategies);
         }
         if (wikiFormat != null || wikiIcons != null || wikiEntities != null || wikiRecipes != null
                 || wikiBlocksSeparate != null) {
@@ -303,6 +436,12 @@ public final class ConfigFile {
                 case "include_namespaces" -> b.includeNamespaces = new LinkedHashSet<>(strings(value));
                 case "exclude_namespaces" -> b.excludeNamespaces = new LinkedHashSet<>(strings(value));
                 case "exclude_mods" -> b.excludeMods = new LinkedHashSet<>(strings(value));
+                case "datapacks" -> b.datapacks = value.asBool();
+                case "global_datapacks" -> b.globalDatapacks = value.asString();
+                case "global_datapack_dir" -> b.globalDatapackDir = value.asString();
+                case "flow" -> b.flow = value.asString();
+                case "targets" -> b.targets = new LinkedHashSet<>(strings(value));
+                case "strategies" -> b.strategies = new LinkedHashSet<>(strings(value));
                 case "wiki_format" -> b.wikiFormat = wikiFormat(value.asString());
                 case "wiki_icons" -> b.wikiIcons = value.asBool();
                 case "wiki_entities" -> b.wikiEntities = value.asBool();
@@ -491,6 +630,24 @@ public final class ConfigFile {
                 exclude_namespaces = []
                 exclude_mods = []
 
+                // ─── 数据驱动 / data-driven ───────────────────────────────────────
+                // 数据包可定义流程、采集对象、分析策略，放在 data/<命名空间>/uee/ 下。
+                // A datapack can define flows, collection targets and analysis strategies under
+                // data/<namespace>/uee/.
+                datapacks = true                // 是否读取数据包定义 / read datapack definitions
+                flow = ""                       // 跟随某条流程；空 = 不指定 / follow a flow; empty = none
+                targets = []                    // 启用哪些采集对象 / which collection targets to write
+                strategies = []                 // 运行哪些分析策略 / which analysis strategies to run
+
+                // 全局数据包 / global datapacks
+                //   auto = 别人提供了就让位（默认） / stand down if another mod provides them
+                //   on   = 总是提供，即使别人也有 / always provide, even alongside another mod
+                //   off  = 从不提供 / never provide
+                // 让位是有意的：两个模组各自加载同一批数据包会重复注册。
+                // Standing down is deliberate: two mods registering the same packs would double-load.
+                global_datapacks = "auto"
+                global_datapack_dir = ""        // 空 = 用默认目录 config/uee/datapacks / empty = default
+
                 // ─── 百科投影 / wiki projection ────────────────────────────────────
                 // v2 = 当前主流导出器 · v1 = 旧一代，字段集不同
                 // v2 = the current exporter lineage · v1 = the previous one, different field set
@@ -615,6 +772,13 @@ public final class ConfigFile {
         v.put("include_namespaces", list(config.includeNamespaces()));
         v.put("exclude_namespaces", list(config.excludeNamespaces()));
         v.put("exclude_mods", list(config.excludeMods()));
+        v.put("datapacks", Boolean.toString(config.datapacks()));
+        v.put("global_datapacks", quote(config.globalDatapacks()));
+        v.put("global_datapack_dir", config.globalDatapackDir() == null
+                ? "\"\"" : quote(config.globalDatapackDir()));
+        v.put("flow", config.flow() == null ? "\"\"" : quote(config.flow()));
+        v.put("targets", list(config.targets()));
+        v.put("strategies", list(config.strategies()));
         v.put("wiki_format", quote(config.wiki().format() == WikiOptions.WikiFormat.V1 ? "v1" : "v2"));
         v.put("wiki_icons", Boolean.toString(config.wiki().icons()));
         v.put("wiki_entities", Boolean.toString(config.wiki().includeEntities()));
@@ -697,6 +861,12 @@ public final class ConfigFile {
         private Set<String> includeNamespaces;
         private Set<String> excludeNamespaces;
         private Set<String> excludeMods;
+        private Boolean datapacks;
+        private String globalDatapacks;
+        private String globalDatapackDir;
+        private String flow;
+        private Set<String> targets;
+        private Set<String> strategies;
         private WikiOptions.WikiFormat wikiFormat;
         private Boolean wikiIcons;
         private Boolean wikiEntities;
@@ -765,6 +935,36 @@ public final class ConfigFile {
 
         public Builder analysisSeparate(boolean on) {
             this.analysisSeparate = on;
+            return this;
+        }
+
+        public Builder datapacks(boolean on) {
+            this.datapacks = on;
+            return this;
+        }
+
+        public Builder globalDatapacks(String mode) {
+            this.globalDatapacks = mode;
+            return this;
+        }
+
+        public Builder globalDatapackDir(String dir) {
+            this.globalDatapackDir = dir;
+            return this;
+        }
+
+        public Builder flow(String id) {
+            this.flow = id;
+            return this;
+        }
+
+        public Builder targets(Set<String> ids) {
+            this.targets = new LinkedHashSet<>(ids);
+            return this;
+        }
+
+        public Builder strategies(Set<String> ids) {
+            this.strategies = new LinkedHashSet<>(ids);
             return this;
         }
 

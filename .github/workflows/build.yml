@@ -33,6 +33,9 @@ jobs:
       - name: Run the analysis test
         run: ./gradlew analysisTest
 
+      - name: Run the datapack test
+        run: ./gradlew datapackTest
+
   # Each loader builds separately because each needs its own patched game jar. `-x test` keeps the
   # core checks in the job above rather than repeating them four times.
   loaders:

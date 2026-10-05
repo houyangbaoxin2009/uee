@@ -7,7 +7,7 @@
 * [简介 / Introduction](#简介--introduction)
 * [为什么做 / Why this exists](#为什么做--why-this-exists)
 * [支持矩阵 / Support matrix](#支持矩阵--support-matrix)
-* [三个接口 / Three interfaces](#三个接口--three-interfaces)
+* [四个接口 / Four interfaces](#四个接口--four-interfaces)
 * [输出格式 / Output formats](#输出格式--output-formats)
 * [输出布局 / Output layout](#输出布局--output-layout)
 * [搜集与分析 / Collection and analysis](#搜集与分析--collection-and-analysis)
@@ -64,12 +64,12 @@ Export capability is designed in **version layers**, never hardcoded against a v
 * **B 层 · 版本适配 / Layer B — version adapted**：注册表、数据包、资产。通过公共源集加
   版本差异层实现，首发锚定 1.21.x。
 
-## 三个接口 / Three interfaces
+## 四个接口 / Four interfaces
 
-同一套能力有三个入口。三者都汇聚到**同一个已解析的配置对象**，因此一个设置在哪个入口写，
+同一套能力有四个入口。四者都汇聚到**同一个已解析的配置对象**，因此一个设置在哪个入口写，
 含义都一样。
 
-The same capability has three entry points. All three converge on **one resolved configuration
+The same capability has four entry points. All four converge on **one resolved configuration
 object**, so a setting means the same thing whichever way it is expressed.
 
 | 接口 / Interface | 入口 / Entry |
@@ -77,6 +77,74 @@ object**, so a setting means the same thing whichever way it is expressed.
 | 函数 API / function API | `org.uee.Uee` 的静态方法 / the static methods on `org.uee.Uee` |
 | 命令 / command | 游戏内 `/uee …` / `/uee …` in game |
 | 配置文件 / config file | `<游戏目录>/config/uee.data.tie` |
+| 数据驱动 / data-driven | 数据包里的 `data/<命名空间>/uee/` |
+
+数据驱动这一层让**数据包定义新的流程、新的采集对象、新的分析策略**，不必改代码：
+
+The data-driven layer lets a datapack define **new flows, new collection targets and new analysis
+strategies** without touching code:
+
+```text
+data/<namespace>/uee/flows/<id>.json       一条具名流程 / a named flow
+data/<namespace>/uee/targets/<id>.json     一个声明式采集对象 / a declarative collection target
+data/<namespace>/uee/analyses/<id>.json    一组声明式分析规则 / declarative analysis rules
+```
+
+同时接受 `.td`（tie 生态惯例）与 `.json`（数据包惯例）。同名两者都存在时会报告并取 JSON。
+
+Both `.td` (the tie convention) and `.json` (the datapack convention) are accepted; a name present in
+both is reported and the JSON one is used.
+
+**一条流程就是一份具名部分配置** —— 它不新开解析路径，而是作为配置之下的一个分层交给同一个解析器。
+所以 `/uee flow wiki export items` 的意思是「用 wiki 流程，但只要物品」。
+
+**A flow is a named partial configuration** — it does not add a resolution path; it is layered
+underneath the caller's arguments and resolved by the same resolver. So `/uee flow wiki export items`
+means "the wiki flow, but only items".
+
+**边界要讲清楚**：数据包不能新增记录类型（元素模型是编译好的 Java）⇒ 采集对象是「在既有类目里
+**选择与投影**」，不是定义新类型。分析策略是一组**固定规则**（require/forbid/together/exclusive/
+mixin target/namespace/count），不是通用表达式语言——通用谓词语言会成为随数据文件发布的小型编程
+语言，需要求值上限、错误语义与版本策略。
+
+**The boundary, stated rather than worked around**: a datapack cannot add a record type, so a target
+selects and projects within an existing category. Analysis strategies are a **fixed rule set**, not a
+general expression language — a general predicate language would be a small programming language
+shipped inside a data file.
+
+### 全局数据包 / Global datapacks
+
+原版数据包按**世界**存放，所以「每个世界都要用」就得每个世界放一份，而且之后新建的世界不会有。
+UEE 因此提供全局数据包：`config/uee/datapacks/` 下的数据包对所有世界生效。
+
+Vanilla datapacks live per world, so using one everywhere means copying it into every world — and a
+world created later will not have it. UEE therefore provides global datapacks: packs under
+`config/uee/datapacks/` apply to every world.
+
+★ **检测到别人已提供此功能时，UEE 自动关闭自己的并让位**，因为两个模组各自加载同一批数据包会
+重复注册：
+
+★ **When another mod already provides this, UEE disables its own and stands down**, because two mods
+registering the same packs would double-load:
+
+| 设置 / Setting | 行为 / Behaviour |
+| --- | --- |
+| `auto`（默认） | 有提供者就让位，并**报告让位给了谁** / stand down if a provider is loaded, and say so |
+| `on` | 总是自己提供，即使别人也有 / always provide, even alongside a provider |
+| `off` | 从不提供 / never provide |
+
+* 检测按**模组 id**（OpenLoader · Paxi · Global Packs 等）：只有已加载的模组才能注册，所以只
+  留下一个空目录不构成让位理由。
+* **只让位「加载」，不让位「内容」**：UEE 的数据包定义仍照读，包括别人加载的全局包里的定义。
+* 让位时若 UEE 目录里还有数据包，会**额外警告**——那些包没人会加载，而这正是最难自己发现的情形。
+* `/uee globalpack` 汇报当前决策与理由。
+
+* Detection is by **mod id**: only a loaded mod can register, so a leftover directory is not a reason
+  to stand down.
+* Only **loading** is delegated, not content: UEE's definitions are still read from wherever found.
+* Packs left in UEE's directory while deferred are **warned about** — nobody would load them, which is
+  the hardest case to notice unaided.
+* `/uee globalpack` reports the decision and the reason.
 
 配置文件用 **`tie:data`（td）语法**，与 tie 生态其它文件一致；**支持 `//` 注释**，
 且生成的配置文件**带逐键说明**——这是选择该格式而非 JSON 的核心原因。
@@ -113,6 +181,9 @@ The file is **partial**: name only the keys you want to change. The layering is
 /uee formats <格式>               选择输出格式
 /uee data | analysis              只跑其中一个半场
 /uee analyze                      只做检查，不导出
+/uee flow <名字>                  运行数据包定义的流程
+/uee flows | targets | strategies | datapacks
+/uee globalpack                   谁在提供全局数据包
 /uee kinds | formats              列出可用词表
 /uee status                       加载器、版本、生效默认值
 /uee config show|path|save|template|reload
@@ -204,12 +275,13 @@ One failing element **never aborts the export**; failures are listed separately.
 
 ## 开发状态 / Status
 
-**实现中**：核心（模型、SPI、八种写端、两阶段分片流水线、崩溃隔离、分析模块、配置层）已落地并通过验证；
-四个加载器的构建脚本与适配层已就位，尚未在联网环境编译过。
+**实现中**：核心（模型、SPI、八种写端、两阶段分片流水线、崩溃隔离、分析模块、配置层、数据包层）已落地并通过验证；
+四个加载器的构建脚本、适配层、命令树与全局数据包钩子已就位，尚未在联网环境编译过。
 
 **In progress**: the core — model, SPI, eight writers, the two-phase sharded pipeline, crash
-isolation, the analysis module and the configuration layer — is implemented and verified; the four
-loaders' build scripts and adapters are in place and have not yet been compiled against the game.
+isolation, the analysis module, the configuration layer and the datapack layer — is implemented and
+verified; the four loaders' build scripts, adapters, command tree and global-pack hooks are in place
+and have not yet been compiled against the game.
 
 ## License
 

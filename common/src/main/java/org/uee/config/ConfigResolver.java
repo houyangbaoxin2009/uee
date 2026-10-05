@@ -30,6 +30,15 @@ import org.uee.model.ElementKind;
  */
 public final class ConfigResolver {
 
+    /**
+     * Names for the layers, used in warnings.
+     *
+     * <p>Positional because the resolver is told a stack, not a menu; a message saying "layer 2" would
+     * be useless, so the first two positions get the names they almost always have and anything beyond
+     * them falls back to a positional description.
+     */
+    private static final String[] LABELS = {"config file", "arguments", "flow", "layer"};
+
     private ConfigResolver() {
     }
 
@@ -55,28 +64,53 @@ public final class ConfigResolver {
      */
     public static Resolved resolve(ConfigFile fileLayer, ConfigFile overrideLayer,
             ExportConfig base) {
+        List<ConfigFile> layers = new ArrayList<>(2);
+        if (fileLayer != null) {
+            layers.add(fileLayer);
+        }
+        if (overrideLayer != null) {
+            layers.add(overrideLayer);
+        }
+        return resolve(base, layers);
+    }
+
+    /**
+     * Resolves an arbitrary stack of layers, applied in order with the later ones winning.
+     *
+     * <p>Which layer sits where is the whole substance of precedence, and there are more than two
+     * sources: the built-in defaults, the config file, a named flow the caller asked for, and finally
+     * whatever the caller stated explicitly. Taking a list rather than fixed parameters means each of
+     * those is a caller's decision rather than something the resolver has to know about — the resolver
+     * needs to understand layering, not the menu of things that can be layered.
+     *
+     * @param base the built-in defaults to start from
+     * @param layers partial descriptions, lowest precedence first; {@code null} entries are skipped
+     */
+    public static Resolved resolve(ExportConfig base, List<ConfigFile> layers) {
         List<String> warnings = new ArrayList<>(2);
         List<String> errors = new ArrayList<>(2);
 
         ExportConfig config = base;
-        if (fileLayer != null && !fileLayer.isEmpty()) {
-            try {
-                config = fileLayer.applyTo(config);
-            } catch (RuntimeException e) {
-                errors.add("config file: " + e.getMessage());
+        int index = 0;
+        for (ConfigFile layer : layers) {
+            if (layer == null) {
+                index++;
+                continue;
+            }
+            String label = LABELS[Math.min(index, LABELS.length - 1)];
+            if (!layer.isEmpty()) {
+                try {
+                    config = layer.applyTo(config);
+                } catch (RuntimeException e) {
+                    errors.add(label + ": " + e.getMessage());
+                }
             }
             // An unrecognised key is reported: a typo that silently does nothing leaves the user
             // believing a setting took effect while the export behaves differently.
-            for (String key : fileLayer.unknownKeys()) {
-                warnings.add("config file: unknown key '" + key + "' was ignored");
+            for (String key : layer.unknownKeys()) {
+                warnings.add(label + ": unknown key '" + key + "' was ignored");
             }
-        }
-        if (overrideLayer != null && !overrideLayer.isEmpty()) {
-            try {
-                config = overrideLayer.applyTo(config);
-            } catch (RuntimeException e) {
-                errors.add("arguments: " + e.getMessage());
-            }
+            index++;
         }
 
         // Analysis kinds without the analysis switch is a contradiction worth naming rather than

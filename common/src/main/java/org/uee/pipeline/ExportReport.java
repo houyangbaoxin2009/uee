@@ -13,9 +13,36 @@ import java.util.List;
  */
 public final class ExportReport {
 
-    /** One written file. */
+    /**
+     * One output file.
+     *
+     * @param namespace the shard's namespace
+     * @param kind the element category
+     * @param format the encoding
+     * @param path the file's path
+     * @param bytes size on disk
+     * @param records records written
+     * @param target the datapack target this artifact belongs to, or an empty string for a category's
+     *     own output. Present because a target's output is a shard of the same category, and without
+     *     this two artifacts of one category would be indistinguishable in the report.
+     */
     public record Artifact(String namespace, String kind, String format, Path path, long bytes,
-            long records) {
+            long records, String target) {
+
+        public Artifact {
+            target = target == null ? "" : target;
+        }
+
+        /** Convenience for the category's own output, which has no target. */
+        public Artifact(String namespace, String kind, String format, Path path, long bytes,
+                long records) {
+            this(namespace, kind, format, path, bytes, records, "");
+        }
+
+        /** Whether this artifact came from a datapack target rather than from the category itself. */
+        public boolean fromTarget() {
+            return !target.isEmpty();
+        }
     }
 
     private final Path root;

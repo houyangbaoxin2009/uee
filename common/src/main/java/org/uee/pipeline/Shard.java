@@ -26,6 +26,7 @@ final class Shard {
     private final String namespace;
     private final ElementKind kind;
     private final String format;
+    private final String target;
     private final Path file;
     private final Writer writer;
     private final StringPool pool;
@@ -34,11 +35,12 @@ final class Shard {
     private long bytes;
     private long records;
 
-    Shard(String namespace, ElementKind kind, String format, Path dir, Writer writer,
+    Shard(String namespace, ElementKind kind, String format, String target, Path dir, Writer writer,
             StringPool pool, long watermark) {
         this.namespace = namespace;
         this.kind = kind;
         this.format = format;
+        this.target = target == null ? "" : target;
         this.writer = writer;
         this.pool = pool;
         this.watermark = watermark;
@@ -71,6 +73,11 @@ final class Shard {
 
     String format() {
         return format;
+    }
+
+    /** The datapack target this shard belongs to, or an empty string for a category's own output. */
+    String target() {
+        return target;
     }
 
     void open() throws IOException {

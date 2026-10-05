@@ -12,6 +12,11 @@ import org.uee.config.ConfigFile;
 import org.uee.config.ConfigResolver;
 import org.uee.config.ExportConfig;
 import org.uee.config.Tokens;
+import org.uee.datapack.DatapackCatalog;
+import org.uee.datapack.DatapackSource;
+import org.uee.datapack.FlowDefinition;
+import org.uee.globalpack.GlobalPackDiscovery;
+import org.uee.globalpack.GlobalPackPolicy;
 import org.uee.pipeline.ExportReport;
 import org.uee.pipeline.Exporter;
 import org.uee.spi.LoaderAdapter;
@@ -47,6 +52,38 @@ public final class Uee {
     /** Called once by a loader's entry point, after its adapter is ready. */
     public static void bind(LoaderAdapter loaderAdapter) {
         adapter = loaderAdapter;
+    }
+
+    /**
+     * Where failures outside a run are reported.
+     *
+     * <p>A loader can install its own log sink. The default writes to stderr, which is the honest
+     * choice for a core that has no logger: a failure during a loader hook, such as a global datapack
+     * that would not register, otherwise disappears.
+     */
+    private static volatile java.util.function.BiConsumer<String, Throwable> failureReporter =
+            (message, error) -> {
+                System.err.println("[" + MOD_ID + "] " + message);
+                if (error != null) {
+                    error.printStackTrace();
+                }
+            };
+
+    /** Installs a log sink for failures raised outside a run. */
+    public static void onFailure(java.util.function.BiConsumer<String, Throwable> reporter) {
+        if (reporter != null) {
+            failureReporter = reporter;
+        }
+    }
+
+    /**
+     * Reports a failure that happened outside a run.
+     *
+     * <p>Needed because the pipeline's failure list only exists during an export, and some things —
+     * a loader's pack registration, for one — happen before any export does.
+     */
+    public static void reportFailure(String message, Throwable error) {
+        failureReporter.accept(message, error);
     }
 
     /** The bound adapter, or {@code null} when no loader has initialised yet. */
@@ -105,16 +142,136 @@ public final class Uee {
     /**
      * The interactive configuration, resolved from the file and any overrides.
      *
-     * <p>Reads the config file from the adapter's game directory and layers the overrides on top, so
-     * the command surface expresses a run in exactly the same terms as the file does.
+     * <p>The layers, lowest precedence first: the config file, then a named flow if the caller asked
+     * for one, then whatever the caller said explicitly. Putting the flow where the config file sits
+     * means a flow is a starting point the caller can still override rather than a separate mode — so
+     * {@code /uee flow wiki export items} is "the wiki flow, but only items", and both interfaces
+     * continue to share one resolution path.
      *
      * @throws IllegalStateException when no adapter is bound
      */
     public static ConfigResolver.Resolved resolveForRun(ConfigFile overrides) throws IOException {
         LoaderAdapter current = requireAdapter();
         Path gameDir = Path.of(current.info().gameDirectory());
-        return ConfigResolver.resolveFrom(ConfigResolver.configDir(gameDir), overrides,
-                ExportConfig.builder().outputDir(ExportConfig.defaultOutputDir(gameDir)).build());
+        DatapackCatalog catalog = catalog();
+
+        List<ConfigFile> layers = new java.util.ArrayList<>(3);
+        layers.add(ConfigFile.readFrom(ConfigResolver.configDir(gameDir)));
+        if (overrides != null && overrides.flow() != null) {
+            FlowDefinition flow = catalog.flow(overrides.flow());
+            if (flow == null) {
+                // Left unexpanded and reported: the rest of what the caller asked for still runs.
+                layers.add(ConfigFile.builder().build());
+                return withCatalogProblems(ConfigResolver.resolve(
+                        ExportConfig.builder()
+                                .outputDir(ExportConfig.defaultOutputDir(gameDir)).build(),
+                        layers), catalog, "flow '" + overrides.flow()
+                                + "' was requested but no datapack defines it");
+            }
+            layers.add(flow.config());
+        }
+        layers.add(overrides);
+
+        ConfigResolver.Resolved resolved = ConfigResolver.resolve(
+                ExportConfig.builder().outputDir(ExportConfig.defaultOutputDir(gameDir)).build(),
+                layers);
+        return withCatalogProblems(resolved, catalog, null);
+    }
+
+    /**
+     * A resolution result with the catalog's own problems appended as warnings.
+     *
+     * <p>Folded in here so a user hears about a malformed datapack through whatever interface they
+     * happened to use, rather than only through the one that lists datapacks.
+     */
+    private static ConfigResolver.Resolved withCatalogProblems(ConfigResolver.Resolved resolved,
+            DatapackCatalog catalog, String extraWarning) {
+        if (catalog.problems().isEmpty() && extraWarning == null) {
+            return resolved;
+        }
+        java.util.List<String> warnings = new java.util.ArrayList<>(resolved.warnings());
+        for (var problem : catalog.problems()) {
+            warnings.add("datapack: " + problem.message());
+        }
+        if (extraWarning != null) {
+            warnings.add(extraWarning);
+        }
+        return new ConfigResolver.Resolved(resolved.config(), warnings, resolved.errors());
+    }
+
+    /**
+     * The datapack definitions currently available.
+     *
+     * <p>Built on demand from wherever definitions are found. Cached per call rather than held in a
+     * field, so a datapack added while the game is running is picked up on the next use instead of
+     * requiring a restart — and so a test can build a catalog without a game.
+     */
+    public static DatapackCatalog catalog() {
+        LoaderAdapter current = adapter;
+        if (current == null) {
+            return DatapackCatalog.empty();
+        }
+        if (!current.info().gameDirectory().isEmpty()) {
+            Path gameDir = Path.of(current.info().gameDirectory());
+            return DatapackCatalog.of(datapackSources(gameDir, current));
+        }
+        return DatapackCatalog.empty();
+    }
+
+    /**
+     * Where definitions are looked for, in increasing order of precedence.
+     *
+     * <p>Worlds are not listed because UEE has no notion of a current save at this point; a world's
+     * own packs are registered through the loader's resource system and reach UEE the same way a mod's
+     * do. That is a limitation worth stating rather than a design choice.
+     */
+    private static List<DatapackSource> datapackSources(Path gameDir, LoaderAdapter current) {
+        List<DatapackSource> sources = new java.util.ArrayList<>(4);
+        for (String id : current.datapackIds()) {
+            sources.add(DatapackSource.of(id, DatapackSource.Origin.MOD));
+        }
+        Path global = globalDir(gameDir, current);
+        if (global != null) {
+            for (GlobalPackDiscovery.Pack pack : GlobalPackDiscovery.packs(global)) {
+                sources.add(new DatapackSource(pack.name(), pack.path(), DatapackSource.Origin.GLOBAL));
+            }
+        }
+        return sources;
+    }
+
+    /**
+     * Decides the global-datapack policy for this instance.
+     *
+     * <p>Exposed because the answer is not derivable from the config alone: whether UEE provides
+     * global datapacks depends on which mods are loaded, and a user needs to be able to ask without
+     * running an export.
+     */
+    public static GlobalPackPolicy globalPackPolicy(ExportConfig config) {
+        LoaderAdapter current = adapter;
+        if (current == null) {
+            return GlobalPackPolicy.decide(GlobalPackPolicy.Mode.OFF, List.of(), null, 0);
+        }
+        Path gameDir = current.info().gameDirectory().isEmpty()
+                ? null : Path.of(current.info().gameDirectory());
+        Path ourDir = globalDir(gameDir, current);
+        int ourPacks = GlobalPackDiscovery.packs(ourDir).size();
+        List<String> modIds = current.mods().stream().map(m -> m.id()).toList();
+        List<GlobalPackPolicy.Detected> detected = GlobalPackDiscovery.detect(gameDir, modIds);
+        return GlobalPackPolicy.decide(
+                GlobalPackPolicy.Mode.of(config.globalDatapacks()), detected,
+                ourDir == null ? null : ourDir.toString(), ourPacks);
+    }
+
+    /**
+     * The directory UEE reads global datapacks from.
+     *
+     * <p>A named sub-directory of the config directory rather than a new top-level one, so it sits
+     * with every other setting and is easy to find.
+     */
+    public static Path globalDir(Path gameDirectory, LoaderAdapter current) {
+        String override = current == null ? null : current.globalPackDirectory();
+        return GlobalPackDiscovery.globalDir(gameDirectory,
+                override == null || override.isEmpty() ? null : Path.of(override));
     }
 
     /**

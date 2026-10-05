@@ -5,7 +5,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
+import org.uee.analysis.AnalysisEngine;
 import org.uee.config.ExportConfig;
+import org.uee.datapack.DatapackCatalog;
+import org.uee.datapack.Selector;
+import org.uee.datapack.TargetDefinition;
 import org.uee.config.WikiOptions;
 import org.uee.model.BlockElement;
 import org.uee.model.DebugSection;
@@ -48,7 +52,28 @@ public final class SmokeTest {
                 .wiki(WikiOptions.builder().enabled(true).icons(true).build())
                 .build();
 
-        ExportReport report = new Exporter(new FakeAdapter(), config, root).run();
+        // A datapack target, so the fourth interface is exercised end to end rather than only
+        // against an in-memory context: it must produce its own shard, in its own directory, without
+        // disturbing the category's own output.
+        DatapackCatalog catalog = DatapackCatalog.ofDefinitions(List.of(),
+                List.of(new TargetDefinition("gems", "smoke", ElementKind.ITEM,
+                                new Selector(null, null, "c:gems", null, null, null),
+                                "gem-tagged items"),
+                        new TargetDefinition("exampleblocks", "smoke", ElementKind.BLOCK,
+                                new Selector("example", null, null, null, null, null),
+                                "blocks in one namespace"),
+                        // Matches nothing in this fixture. A target that selects an empty set must
+                        // produce no file at all, rather than an empty one: an empty artifact is
+                        // indistinguishable from a category that produced nothing.
+                        new TargetDefinition("vanillaonly", "smoke", ElementKind.BLOCK,
+                                new Selector("minecraft", null, null, null, null, null),
+                                "vanilla blocks")),
+                List.of());
+        config = config.toBuilder()
+                .targets(java.util.Set.of("gems", "exampleblocks", "vanillaonly")).build();
+
+        ExportReport report = new Exporter(new FakeAdapter(), config, root,
+                AnalysisEngine.standard(), catalog).run();
         int problems = validate(report, root);
         System.out.println("== report ==");
         System.out.println(report.summary());
@@ -61,6 +86,31 @@ public final class SmokeTest {
             System.out.println("== failures ==");
             report.failures().forEach(f -> System.out.println("  " + f));
         }
+        List<ExportReport.Artifact> fromTargets = report.artifacts().stream()
+                .filter(ExportReport.Artifact::fromTarget).toList();
+        System.out.println("targets: " + fromTargets.size() + " artifact(s) from "
+                + fromTargets.stream().map(ExportReport.Artifact::target).distinct().toList());
+        java.util.Set<String> firingTargets = fromTargets.stream()
+                .map(ExportReport.Artifact::target).collect(java.util.stream.Collectors.toSet());
+        System.out.println("targets firing: " + firingTargets);
+        if (firingTargets.size() < 2) {
+            System.out.println("  PROBLEM expected at least two targets to produce output, got "
+                    + firingTargets);
+            problems++;
+        }
+        // A target that matches nothing must leave nothing behind.
+        if (firingTargets.contains("smoke:vanillaonly")) {
+            System.out.println("  PROBLEM a target matching no element still produced output");
+            problems++;
+        }
+        for (ExportReport.Artifact a : fromTargets) {
+            if (!a.path().toString().contains("targets")) {
+                System.out.println("  PROBLEM a target artifact is not under a targets/ directory: "
+                        + a.path());
+                problems++;
+            }
+        }
+
         for (ExportReport.Artifact a : report.artifacts()) {
             System.out.println("\n---- " + root.relativize(a.path()) + " ----");
             if (ExportConfig.ZD.equals(a.format())) {
@@ -103,7 +153,8 @@ public final class SmokeTest {
                 continue;
             }
             String text = Files.readString(a.path());
-            String shard = a.namespace() + "|" + a.kind();
+            String shard = a.namespace() + "|" + a.kind()
+                    + (a.fromTarget() ? "|target:" + a.target() : "");
             int records = -1;
 
             switch (a.format()) {

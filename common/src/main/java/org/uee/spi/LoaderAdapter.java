@@ -75,6 +75,31 @@ public interface LoaderAdapter {
     }
 
     /**
+     * Ids of the datapacks that are active in this instance.
+     *
+     * <p>UEE reads its own definitions out of datapacks, and a datapack reaches the game through the
+     * loader's resource system — so the loader is the only thing that knows which datapacks exist. A
+     * mod's bundled definitions arrive this way too, which is why there is no separate mod path.
+     *
+     * <p>Only ids are needed, not contents: the definitions are read from the same files the game
+     * loaded them from. Default is empty, so an adapter that cannot enumerate datapacks simply
+     * contributes no datapack-defined flows.
+     */
+    default List<String> datapackIds() {
+        return List.of();
+    }
+
+    /**
+     * The directory UEE should read global datapacks from, or {@code null} for the default.
+     *
+     * <p>An override rather than the directory itself, because the default is derived from the game
+     * directory and an adapter should not have to reconstruct it.
+     */
+    default String globalPackDirectory() {
+        return null;
+    }
+
+    /**
      * Capability probe used instead of version comparison.
      *
      * @param capability a stable capability key, e.g. {@code "data_components"} or

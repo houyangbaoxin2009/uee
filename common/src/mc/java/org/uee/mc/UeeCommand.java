@@ -23,6 +23,12 @@ import org.uee.config.ConfigFile;
 import org.uee.config.ConfigResolver;
 import org.uee.config.ExportConfig;
 import org.uee.config.Tokens;
+import org.uee.datapack.DatapackCatalog;
+import org.uee.datapack.DatapackSource;
+import org.uee.datapack.FlowDefinition;
+import org.uee.datapack.StrategyDefinition;
+import org.uee.datapack.TargetDefinition;
+import org.uee.globalpack.GlobalPackPolicy;
 import org.uee.model.ElementKind;
 import org.uee.pipeline.ExportReport;
 
@@ -89,13 +95,29 @@ public final class UeeCommand {
                                         arg(ctx, "formats")))))
 
                 // Analyse without exporting: answers "what is wrong with this instance" cheaply.
-                .then(Commands.literal("analyze").executes(ctx -> analyze(ctx.getSource())))
+                .then(Commands.literal("analyze")
+                        .executes(ctx -> analyzeWithPolicy(ctx.getSource())))
 
                 // The two halves of a run, each on its own.
                 .then(Commands.literal("data").executes(ctx -> runDefault(ctx.getSource(),
                         Tokens.DATA, null)))
                 .then(Commands.literal("analysis").executes(ctx -> runDefault(ctx.getSource(),
                         Tokens.ANALYSIS, null)))
+
+                // The fourth interface: what datapacks define, and running a flow they declare.
+                .then(Commands.literal("flows")
+                        .executes(ctx -> listFlows(ctx.getSource())))
+                .then(Commands.literal("flow")
+                        .then(Commands.argument("name", StringArgumentType.word())
+                                .executes(ctx -> runFlow(ctx.getSource(), arg(ctx, "name")))))
+                .then(Commands.literal("targets")
+                        .executes(ctx -> listTargets(ctx.getSource())))
+                .then(Commands.literal("strategies")
+                        .executes(ctx -> listStrategies(ctx.getSource())))
+                .then(Commands.literal("datapacks")
+                        .executes(ctx -> listDatapacks(ctx.getSource())))
+                .then(Commands.literal("globalpack")
+                        .executes(ctx -> globalPack(ctx.getSource())))
 
                 .then(Commands.literal("config")
                         .executes(ctx -> configShow(ctx.getSource()))
@@ -133,7 +155,16 @@ public final class UeeCommand {
             source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
             return 0;
         }
+        return runWith(source, overrides);
+    }
 
+    /**
+     * Resolves and runs, given the caller's partial description.
+     *
+     * <p>Every command verb funnels here, including {@code /uee flow}, so the token-parsing verbs and
+     * the flow verb cannot diverge in how a run is resolved.
+     */
+    private static int runWith(CommandSourceStack source, ConfigFile overrides) {
         ConfigResolver.Resolved resolved;
         try {
             resolved = Uee.resolveForRun(overrides);
@@ -355,6 +386,152 @@ public final class UeeCommand {
         return 1;
     }
 
+    // ---------------------------------------------------------------- the fourth interface
+
+    /**
+     * Runs a named datapack flow.
+     *
+     * <p>The flow is put into the override layer as a name, not expanded here: resolution is the
+     * resolver's job, and expanding it in the command would be the second path this design exists to
+     * avoid. A flow the resolver cannot find is reported there, with the rest of the caller's request.
+     */
+    private static int runFlow(CommandSourceStack source, String name) {
+        if (name == null || name.isBlank()) {
+            source.sendFailure(Component.literal(Uee.NAME + ": /uee flow <name>"));
+            return 0;
+        }
+        return runWith(source, ConfigFile.builder().flow(name).build());
+    }
+
+    private static int listFlows(CommandSourceStack source) {
+        DatapackCatalog catalog = Uee.catalog();
+        if (catalog.flows().isEmpty()) {
+            source.sendSuccess(() -> Component.literal(Uee.NAME
+                    + ": no datapack defines a flow"), false);
+            source.sendSuccess(() -> Component.literal(
+                    "  add one at data/<namespace>/uee/flows/<id>.json in a datapack"), false);
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("flows / 流程 (" + catalog.flows().size() + ")"),
+                false);
+        for (FlowDefinition flow : catalog.flows().values()) {
+            source.sendSuccess(() -> Component.literal("  " + flow.qualifiedId()
+                    + (flow.description() == null ? "" : "  — " + flow.description())), false);
+            source.sendSuccess(() -> Component.literal("      sets: "
+                    + (flow.touchedKeys().isEmpty() ? "(defaults only)"
+                            : String.join(", ", flow.touchedKeys()))
+                    + (flow.hasTargets() ? "  targets: " + String.join(", ", flow.targets()) : "")),
+                    false);
+        }
+        return catalog.flows().size();
+    }
+
+    private static int listTargets(CommandSourceStack source) {
+        DatapackCatalog catalog = Uee.catalog();
+        if (catalog.targets().isEmpty()) {
+            source.sendSuccess(() -> Component.literal(Uee.NAME
+                    + ": no datapack defines a collection target"), false);
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal(
+                "collection targets / 采集对象 (" + catalog.targets().size() + ")"), false);
+        for (TargetDefinition target : catalog.targets().values()) {
+            source.sendSuccess(() -> Component.literal("  " + target.namespace() + ":" + target.id()
+                    + "  [" + target.category().plural() + "]  " + target.selector().describe()),
+                    false);
+        }
+        return catalog.targets().size();
+    }
+
+    private static int listStrategies(CommandSourceStack source) {
+        DatapackCatalog catalog = Uee.catalog();
+        if (catalog.strategies().isEmpty()) {
+            source.sendSuccess(() -> Component.literal(Uee.NAME
+                    + ": no datapack defines an analysis strategy"), false);
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal(
+                "analysis strategies / 分析策略 (" + catalog.strategies().size() + ")"), false);
+        for (StrategyDefinition strategy : catalog.strategies().values()) {
+            source.sendSuccess(() -> Component.literal("  " + strategy.qualifiedId()
+                    + "  (" + strategy.rules().size() + " rules"
+                    + (strategy.needsCollection() ? ", needs collection" : "") + ")"), false);
+            if (strategy.description() != null) {
+                source.sendSuccess(() -> Component.literal("      " + strategy.description()), false);
+            }
+        }
+        return catalog.strategies().size();
+    }
+
+    private static int listDatapacks(CommandSourceStack source) {
+        DatapackCatalog catalog = Uee.catalog();
+        source.sendSuccess(() -> Component.literal("datapacks defining UEE content ("
+                + catalog.sources().size() + ")"), false);
+        if (catalog.sources().isEmpty()) {
+            source.sendSuccess(() -> Component.literal(
+                    "  none; /uee flow and /uee targets will be empty"), false);
+        }
+        for (DatapackSource datapack : catalog.sources().values()) {
+            source.sendSuccess(() -> Component.literal("  " + datapack.id()
+                    + "  (" + datapack.origin().token() + ")"
+                    + (datapack.path() == null ? "" : "  " + datapack.path())), false);
+        }
+        if (!catalog.problems().isEmpty()) {
+            source.sendSuccess(() -> Component.literal("  problems / 问题:"), false);
+            catalog.problems().forEach(p -> source.sendSuccess(() -> Component.literal(
+                    "    [" + p.severity().token() + "] " + p.message()), false));
+        }
+        return catalog.sources().size();
+    }
+
+    /**
+     * Reports the global-datapack decision.
+     *
+     * <p>Worth its own verb because the answer is not in the config: whether UEE provides global
+     * datapacks depends on which mods are loaded, and "why is my pack not loading" is the question
+     * this verb answers.
+     */
+    private static int globalPack(CommandSourceStack source) {
+        ExportConfig config;
+        try {
+            config = Uee.resolveForRun(ConfigFile.empty()).config();
+        } catch (IOException | IllegalStateException e) {
+            source.sendFailure(Component.literal(Uee.NAME + ": " + e));
+            return 0;
+        }
+        GlobalPackPolicy policy = Uee.globalPackPolicy(config);
+        source.sendSuccess(() -> Component.literal("global datapacks / 全局数据包"), false);
+        source.sendSuccess(() -> Component.literal("  " + policy.describe()), false);
+        source.sendSuccess(() -> Component.literal("  UEE directory: " + policy.ourDirectory()
+                + "  (" + policy.ourPackCount() + " pack(s))"), false);
+        if (policy.deferred()) {
+            source.sendSuccess(() -> Component.literal("  delegated to: "
+                    + policy.deferredTo().name() + " (" + policy.deferredTo().modId() + ")"), false);
+            source.sendSuccess(() -> Component.literal("  its directories: "
+                    + String.join(", ", policy.detected().get(0).directories())), false);
+        }
+        for (Finding finding : policy.findings()) {
+            source.sendSuccess(() -> Component.literal(
+                    "  [" + finding.severity().token() + "] " + finding.message()), false);
+        }
+        return 1;
+    }
+
+    /** Runs the metadata-only checks, plus the global-datapack decision, without exporting. */
+    private static int analyzeWithPolicy(CommandSourceStack source) {
+        int n = analyze(source);
+        try {
+            ExportConfig config = Uee.resolveForRun(ConfigFile.empty()).config();
+            for (Finding finding : Uee.globalPackPolicy(config).findings()) {
+                source.sendSuccess(() -> Component.literal(
+                        "  [" + finding.severity().token() + "] " + finding.message()), false);
+            }
+        } catch (IOException | IllegalStateException e) {
+            // The analysis already reported what it could; a config problem here is not new news.
+        }
+        return n;
+    }
+
     // ---------------------------------------------------------------- config verbs
 
     private static int configShow(CommandSourceStack source) {
@@ -472,6 +649,12 @@ public final class UeeCommand {
                 "  " + p + " data | analysis       only one half of a run"), false);
         source.sendSuccess(() -> Component.literal(
                 "  " + p + " analyze               run the checks that need no export"), false);
+        source.sendSuccess(() -> Component.literal(
+                "  " + p + " flow <name>           run a datapack-defined flow"), false);
+        source.sendSuccess(() -> Component.literal(
+                "  " + p + " flows | targets | strategies | datapacks"), false);
+        source.sendSuccess(() -> Component.literal(
+                "  " + p + " globalpack            who provides global datapacks"), false);
         source.sendSuccess(() -> Component.literal(
                 "  " + p + " kinds | formats       list the accepted tokens"), false);
         source.sendSuccess(() -> Component.literal(

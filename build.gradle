@@ -117,9 +117,26 @@ tasks.register('analysisTest', JavaExec) {
     args = [layout.buildDirectory.dir('analysis-test').get().asFile.absolutePath]
 }
 
+/**
+ * Runs the datapack and global-pack checks.
+ *
+ * <p>Covers the fourth interface — flows, collection targets and analysis strategies declared in data
+ * files — plus the global-datapack policy. Both are file-system and data only, so neither needs a
+ * game; the fixtures are real datapack directory trees because the layout is part of what is tested.
+ */
+tasks.register('datapackTest', JavaExec) {
+    description = 'Runs the datapack-definition and global-datapack checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.DatapackTest'
+    args = [layout.buildDirectory.dir('datapack-test').get().asFile.absolutePath]
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
     group = 'verification'
-    dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest'
+    dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest',
+            'datapackTest'
 }

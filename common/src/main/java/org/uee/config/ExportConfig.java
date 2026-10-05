@@ -68,6 +68,12 @@ public final class ExportConfig {
     private final boolean analyze;
     private final boolean analysisSeparate;
     private final boolean packagePerKind;
+    private final boolean datapacks;
+    private final String globalDatapacks;
+    private final String globalDatapackDir;
+    private final String flow;
+    private final Set<String> targets;
+    private final Set<String> strategies;
     private final WikiOptions wiki;
 
     private ExportConfig(Builder b) {
@@ -90,6 +96,12 @@ public final class ExportConfig {
         this.analyze = b.analyze;
         this.analysisSeparate = b.analysisSeparate;
         this.packagePerKind = b.packagePerKind;
+        this.datapacks = b.datapacks;
+        this.globalDatapacks = b.globalDatapacks;
+        this.globalDatapackDir = b.globalDatapackDir;
+        this.flow = b.flow;
+        this.targets = Collections.unmodifiableSet(new LinkedHashSet<>(b.targets));
+        this.strategies = Collections.unmodifiableSet(new LinkedHashSet<>(b.strategies));
         this.wiki = b.wiki;
     }
 
@@ -189,6 +201,48 @@ public final class ExportConfig {
         return packagePerKind;
     }
 
+    /**
+     * Whether datapack-defined flows, targets and strategies are read at all.
+     *
+     * <p>On by default. Off means the run uses only the built-in categories and checks, which is what
+     * a caller wants when reproducing a result and they do not want a pack's definitions to perturb
+     * it.
+     */
+    public boolean datapacks() {
+        return datapacks;
+    }
+
+    /**
+     * The global-datapack setting: {@code auto}, {@code on} or {@code off}.
+     *
+     * <p>Kept as a token rather than an enum so the value survives a round trip through the config
+     * file unchanged, and so an unrecognised value degrades to {@code auto} instead of failing a run.
+     * {@link org.uee.globalpack.GlobalPackPolicy.Mode#of} is where it is interpreted.
+     */
+    public String globalDatapacks() {
+        return globalDatapacks;
+    }
+
+    /** The global datapack directory, or {@code null} for the default under the game directory. */
+    public String globalDatapackDir() {
+        return globalDatapackDir;
+    }
+
+    /** The flow this run follows, or {@code null} when it is an ad-hoc configuration. */
+    public String flow() {
+        return flow;
+    }
+
+    /** Datapack-defined targets this run writes, by id. */
+    public Set<String> targets() {
+        return targets;
+    }
+
+    /** Datapack-defined analysis strategies this run runs, by id. */
+    public Set<String> strategies() {
+        return strategies;
+    }
+
     public WikiOptions wiki() {
         return wiki;
     }
@@ -253,6 +307,12 @@ public final class ExportConfig {
         b.analyze = analyze;
         b.analysisSeparate = analysisSeparate;
         b.packagePerKind = packagePerKind;
+        b.datapacks = datapacks;
+        b.globalDatapacks = globalDatapacks;
+        b.globalDatapackDir = globalDatapackDir;
+        b.flow = flow;
+        b.targets = new LinkedHashSet<>(targets);
+        b.strategies = new LinkedHashSet<>(strategies);
         b.wiki = wiki;
         return b;
     }
@@ -310,6 +370,12 @@ public final class ExportConfig {
         private boolean analyze = true;
         private boolean analysisSeparate = true;
         private boolean packagePerKind = true;
+        private boolean datapacks = true;
+        private String globalDatapacks = "auto";
+        private String globalDatapackDir = null;
+        private String flow = null;
+        private Set<String> targets = new LinkedHashSet<>();
+        private Set<String> strategies = new LinkedHashSet<>();
         private WikiOptions wiki = WikiOptions.defaults();
 
         public Builder outputDir(Path dir) {
@@ -407,6 +473,47 @@ public final class ExportConfig {
 
         public Builder packagePerKind(boolean on) {
             this.packagePerKind = on;
+            return this;
+        }
+
+        public Builder datapacks(boolean on) {
+            this.datapacks = on;
+            return this;
+        }
+
+        public Builder globalDatapacks(String mode) {
+            this.globalDatapacks = mode == null ? "auto" : mode;
+            return this;
+        }
+
+        public Builder globalDatapackDir(String dir) {
+            this.globalDatapackDir = dir;
+            return this;
+        }
+
+        /** Records which flow this configuration came from, for reporting. */
+        public Builder flow(String id) {
+            this.flow = id;
+            return this;
+        }
+
+        public Builder targets(Set<String> ids) {
+            this.targets = new LinkedHashSet<>(ids);
+            return this;
+        }
+
+        public Builder addTarget(String id) {
+            this.targets.add(id);
+            return this;
+        }
+
+        public Builder strategies(Set<String> ids) {
+            this.strategies = new LinkedHashSet<>(ids);
+            return this;
+        }
+
+        public Builder addStrategy(String id) {
+            this.strategies.add(id);
             return this;
         }
 
