@@ -202,7 +202,7 @@ and no more for the dominant purpose**:
 | 方面 / Aspect | 默认 / Default | 为什么 / Why |
 | --- | --- | --- |
 | 格式 / format | `json` | 通用可读，无需解释 / readable anywhere |
-| 类目 / categories | 20 个：mods items blocks entities recipes **tags** **loot_tables** **advancements** **worldgen** **langs** effects fluids enchantments creative_tabs sounds particles attributes biomes structures dimensions damage_types block_entity_types potions features recipe_types menus | 百科页要引用的注册表与分组全在里面，跑一次就够 / everything a wiki entry references |
+| 类目 / categories | 21 个：mods items blocks entities recipes **tags** **loot_tables** **advancements** **worldgen** **functions** **langs** effects fluids enchantments creative_tabs sounds particles attributes biomes structures dimensions damage_types block_entity_types potions features recipe_types menus | 百科页要引用的注册表与分组全在里面，跑一次就够 / everything a wiki entry references |
 | 分析 / analysis | 开，**独立成包** | n 个数据包 + **1 个**分析包；数据那半可单独交给下游 / n data packages plus one analysis bundle |
 | 不导 / left out | biomes dimensions structures sounds particles attributes damage_types | 大、少改、物品页用不到；一个词可加回 / large, rarely changed, one token away |
 
@@ -239,6 +239,18 @@ otherwise "no translations" and "the pack has none" are indistinguishable.
 ★ **`worldgen` records what a pack wrote, not what the game loaded**: fourteen kinds of file behind one
 category, each record carrying its kind, its type and the references. Biomes and structures have registry
 categories that give the loaded answer, so both are available and neither is guessed at.
+
+★ **`functions` 是本工具唯一不是 JSON 的类目**（`.mcfunction` 是纯文本）。记录的是**调用图**与命令条数，
+命令本身不复制。★ 行规则读自原版解析器：行尾**反斜杠续行**（⇒ 行数≠命令数）、井号开头是注释、
+美元符开头是**宏**、斜杠开头是**错误**。实测一个真实数据包：**注释行数（17425）多于命令条数（11091）**。
+宏算出来的调用名无法静态解析，记在 `dynamicRefs` 而**不是丢掉**。
+
+★ **`functions` is the one category that is not JSON** — a `.mcfunction` is plain text. What is recorded is
+the call graph and how many commands it runs; the commands are not copied. The line rules come from the
+game's own reader: a trailing backslash continues a line (so lines are not commands), a leading hash is a
+comment, a leading dollar sign is a macro, and a leading slash is a mistake the game refuses. In one real
+pack the comment lines outnumber the commands. A call whose target is computed by a macro is recorded
+under `dynamicRefs` rather than dropped.
 
 ★ **并行只用在「制备」，发射仍单线程** —— 记录要按序写进分片缓冲，两个线程追加同一分片会交错损坏。
 所以 worker 只读文件、解析、建模型，**调用线程按输入顺序发射**。
