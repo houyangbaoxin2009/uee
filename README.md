@@ -202,7 +202,7 @@ and no more for the dominant purpose**:
 | 方面 / Aspect | 默认 / Default | 为什么 / Why |
 | --- | --- | --- |
 | 格式 / format | `json` | 通用可读，无需解释 / readable anywhere |
-| 类目 / categories | 13 个：mods items blocks entities recipes **tags** **loot_tables** **langs** effects fluids enchantments creative_tabs sounds particles attributes biomes | 百科页要引用的注册表与分组全在里面，跑一次就够 / everything a wiki entry references |
+| 类目 / categories | 19 个：mods items blocks entities recipes **tags** **loot_tables** **advancements** **langs** effects fluids enchantments creative_tabs sounds particles attributes biomes structures dimensions damage_types block_entity_types potions features recipe_types menus | 百科页要引用的注册表与分组全在里面，跑一次就够 / everything a wiki entry references |
 | 分析 / analysis | 开，**独立成包** | n 个数据包 + **1 个**分析包；数据那半可单独交给下游 / n data packages plus one analysis bundle |
 | 不导 / left out | biomes dimensions structures sounds particles attributes damage_types | 大、少改、物品页用不到；一个词可加回 / large, rarely changed, one token away |
 
