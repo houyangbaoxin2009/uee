@@ -202,6 +202,8 @@ and no more for the dominant purpose**:
 | 方面 / Aspect | 默认 / Default | 为什么 / Why |
 | --- | --- | --- |
 | 格式 / format | `json` | 通用可读，无需解释 / readable anywhere |
+| 资产 / assets | `assets = true` 时把 `assets/<ns>/` **全部文件原样拷贝**（贴图/模型/音效/语言），默认关，**仅客户端** |
+
 | 类目 / categories | 21 个：mods items blocks entities recipes **tags** **loot_tables** **advancements** **worldgen** **functions** **langs** effects fluids enchantments creative_tabs sounds particles attributes biomes structures dimensions damage_types block_entity_types potions features recipe_types menus | 百科页要引用的注册表与分组全在里面，跑一次就够 / everything a wiki entry references |
 | 分析 / analysis | 开，**独立成包** | n 个数据包 + **1 个**分析包；数据那半可单独交给下游 / n data packages plus one analysis bundle |
 | 不导 / left out | biomes dimensions structures sounds particles attributes damage_types | 大、少改、物品页用不到；一个词可加回 / large, rarely changed, one token away |
@@ -237,6 +239,19 @@ otherwise "no translations" and "the pack has none" are indistinguishable.
 消失的删除；快照在输出目录的 `.uee-snapshot`。★ 为什么用 SHA-256 而不是校验和：差量把「指纹相同」
 当作「没变」，一次碰撞就是**一次丢失的变更**，且**静默**。★ 为什么按分片而非按记录：写端是流式缓冲、
 记录之间没有边界。★ 第二次跑同样的输入 ⇒ **一个字节都不写**（真实管线实测：131 个分片全部识别为未变）。
+
+★ **资产是「拷贝」不是「采集」**：没有元素可描述，只有字节要落地 ⇒ 直接拷贝，路径 `assets/<ns>/<路径>`。
+★★ **绝不解码**：指纹取自**落盘字节** ⇒ 一旦重编码，每次跑都被判「变了」，差量会永远重写它。
+★ 因此资产比记录更省：源字节**本来就在**，未变时**一次读、零写**（记录必须先写出来才能比对）。
+★★ **资产与数据是资源管理器的两侧**：服务器管理器见 `data/`、客户端见 `assets/` ⇒ **两个独立绑定**。
+用同一个绑定会把**数据包文件当资产拷进 assets 树**，而资源位置本身**看不出它来自哪一侧**。
+
+★ **Assets are copied, not collected** — there is no element to describe, only bytes to place. Never
+decoded: the fingerprint is taken over the bytes that land on disk, so a re-encode would be judged changed
+forever. That makes them cheaper than records: an unchanged asset costs one read and no write.
+★ **Assets and data are two sides of a resource manager** (a server's sees `data/`, a client's sees
+`assets/`), so they get two bindings. One binding would copy a server's datapack files into the assets
+tree, and nothing in a resource location says which side it came from.
 
 ★ **Incremental export (off by default)**: with `delta = true`, only the shards whose content changed are
 written, unchanged ones are left alone and vanished ones are deleted, keyed on SHA-256 in a
