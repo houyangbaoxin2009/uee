@@ -619,6 +619,55 @@ public final class UeeGameTests {
         java.nio.file.Files.writeString(file, content);
     }
 
+    /**
+     * Registration order is reported, and it says something true about the game's own registries.
+     *
+     * <p>The numbers a registry assigns are the registration order, so this is the one place the derivation
+     * can be checked against a real one rather than against a map written for the purpose. What is asserted
+     * is the property a reader relies on: the game's own entries come first, having been registered before
+     * anything else could be. If a mod's block ever started at zero, either the derivation or the premise
+     * behind it would be wrong, and this is where that would show.
+     */
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void registrationOrderIsReported(GameTestHelper helper) {
+        LoaderAdapter adapter = Uee.adapter();
+        DebugSection items = null;
+        for (DebugSection section : adapter.debugSections()) {
+            if (section.name().equals("registrationOrderItems")) {
+                items = section;
+            }
+        }
+        helper.assertTrue(items != null, "no item registration order section was produced");
+        String rendered = describe(items);
+        helper.assertTrue(has(items, "entries") && has(items, "namespaces"),
+                "the section does not report its totals: " + rendered);
+
+        // Every registry has the game's items in it, and they were registered first.
+        helper.assertTrue(has(items, "0"),
+                "the section reports no namespaces at all: " + rendered);
+        helper.assertTrue(value(items, "0").startsWith("minecraft "),
+                "the first namespace is not the game's, though nothing is registered before it: "
+                        + value(items, "0"));
+        helper.assertTrue(value(items, "0").contains("0-"),
+                "the game's block does not start at zero: " + value(items, "0"));
+
+        // And the count is a count of items, so it cannot be smaller than the game's own catalogue.
+        int entries = Integer.parseInt(value(items, "entries"));
+        helper.assertTrue(entries > 100,
+                "only " + entries + " items were counted, which is fewer than the game itself has");
+
+        // A second registry, since the numbers are per registry and one section would be mixing two orders.
+        boolean blocks = false;
+        for (DebugSection section : adapter.debugSections()) {
+            if (section.name().equals("registrationOrderBlocks")) {
+                blocks = true;
+            }
+        }
+        helper.assertTrue(blocks, "no block registration order section was produced");
+
+        helper.succeed();
+    }
+
     /** The mod list contains this mod and the game itself, with dependencies parsed. */
     @GameTest(template = "empty", timeoutTicks = 200)
     public static void modListIsAvailable(GameTestHelper helper) {

@@ -365,6 +365,21 @@ tasks.register('classLoaderTest', JavaExec) {
     mainClass = 'org.uee.ClassLoaderTest'
 }
 
+/**
+ * Runs the registration order checks.
+ *
+ * <p>The derivation is arithmetic on a registry's numbers, so it is checked directly. What earns its place
+ * is not the sorting but the two cases a reader would be misled by: a namespace whose numbers are split in
+ * two, which must not be reported as one unbroken run, and the order of the groups, which is the point.
+ */
+tasks.register('registrationOrderTest', JavaExec) {
+    description = 'Runs the registration order checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.RegistrationOrderTest'
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
@@ -372,5 +387,6 @@ tasks.register('verifyAll') {
     dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest',
             'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest', 'scaleTest',
             'tagTest', 'lootTableTest', 'iconTest', 'categoryTest', 'advancementTest',
-            'worldgenTest', 'mcfunctionTest', 'deltaTest', 'assetTest', 'classLoaderTest'
+            'worldgenTest', 'mcfunctionTest', 'deltaTest', 'assetTest', 'classLoaderTest',
+            'registrationOrderTest'
 }

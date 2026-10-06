@@ -32,6 +32,7 @@ import org.uee.datapack.TagFile;
 import org.uee.datapack.WorldgenFile;
 import org.uee.util.OrderedWork;
 import org.uee.analysis.ClassLoaderChain;
+import org.uee.analysis.RegistrationOrder;
 import org.uee.asset.AssetPath;
 import org.uee.asset.AssetSweep;
 import org.uee.datapack.AdvancementFile;
@@ -319,6 +320,7 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         sections.add(DebugSection.of("mods",
                 "count", String.valueOf(loadedMods().size())));
         sections.add(classLoaderSection());
+        sections.addAll(registrationOrderSection());
         return sections;
     }
 
@@ -363,6 +365,64 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
             flat[i++] = entry.getValue();
         }
         return DebugSection.of("classLoaders", flat);
+    }
+
+    /**
+     * The order entries were registered in, for the registries where that is visible.
+     *
+     * <h2>Where the order comes from</h2>
+     *
+     * <p>A registry hands out a sequential number as each entry is registered, so the numbers are the order,
+     * and grouping them by namespace shows who went first — the game, then each mod's block. That is the
+     * question a reader has about order: not the number of the nine-thousandth item, but which mods came in
+     * what sequence.
+     *
+     * <h2>Which registries</h2>
+     *
+     * <p>Items and blocks, which are the two whose numbers anything else tends to be derived from — a block's
+     * number is its item's in most cases, and both are large enough that the grouping is meaningful. It is
+     * not every registry: the ones built from a data pack have their order decided by the packs rather than
+     * by registration, and reporting them here would answer a different question under this one's name.
+     *
+     * <p>Two sections rather than one, because the numbers are per registry and a single section mixing item
+     * numbers with block numbers would be a list of two interleaved orders.
+     */
+    private List<DebugSection> registrationOrderSection() {
+        List<DebugSection> out = new ArrayList<>(2);
+        addRegistrationOrder(out, "registrationOrderItems", BuiltInRegistries.ITEM);
+        addRegistrationOrder(out, "registrationOrderBlocks", BuiltInRegistries.BLOCK);
+        return out;
+    }
+
+    /**
+     * Adds one registry's order, if its numbers can be read.
+     *
+     * <p>Wrapped because a registry this is asked of might not be the kind whose numbers are meaningful, and
+     * a debug section is the last place that should fail a run. A registry that cannot answer is reported as
+     * such rather than left out, so its absence is a fact in the output instead of a silence.
+     */
+    private static <T> void addRegistrationOrder(List<DebugSection> out, String name,
+            net.minecraft.core.Registry<T> registry) {
+        try {
+            Map<Integer, String> ids = new java.util.LinkedHashMap<>();
+            for (ResourceLocation key : registry.keySet()) {
+                T value = registry.get(key);
+                if (value == null) {
+                    continue;
+                }
+                ids.put(registry.getId(value), key.getNamespace());
+            }
+            Map<String, String> pairs = RegistrationOrder.of(ids).asPairs();
+            String[] flat = new String[pairs.size() * 2];
+            int i = 0;
+            for (Map.Entry<String, String> entry : pairs.entrySet()) {
+                flat[i++] = entry.getKey();
+                flat[i++] = entry.getValue();
+            }
+            out.add(DebugSection.of(name, flat));
+        } catch (Throwable t) {
+            out.add(DebugSection.of(name, "error", String.valueOf(t)));
+        }
     }
 
     /**

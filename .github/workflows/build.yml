@@ -78,6 +78,9 @@ jobs:
       - name: Run the class loader chain test
         run: ./gradlew classLoaderTest
 
+      - name: Run the registration order test
+        run: ./gradlew registrationOrderTest
+
   # Each loader builds separately because each needs its own patched game jar. `-x test` keeps the
   # core checks in the job above rather than repeating them four times.
   loaders:
