@@ -22,6 +22,14 @@ public final class UeeForge {
         Uee.bind(adapter);
         MinecraftForge.EVENT_BUS.addListener(this::onServerStarted);
         MinecraftForge.EVENT_BUS.addListener(this::onRegisterCommands);
+        // Assets, on a client only. The call is guarded rather than the class being filtered, because
+        // Forge's @Mod takes no side: the guard keeps a dedicated server from ever resolving UeeForgeClient,
+        // which is the class that names a client-only event.
+        if (net.minecraftforge.fml.loading.FMLEnvironment.dist
+                == net.minecraftforge.api.distmarker.Dist.CLIENT) {
+            UeeForgeClient.init(net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext.get()
+                    .getModEventBus());
+        }
     }
 
     private void onServerStarted(ServerStartedEvent event) {

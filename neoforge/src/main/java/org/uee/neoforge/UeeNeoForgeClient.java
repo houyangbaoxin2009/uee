@@ -1,33 +1,43 @@
 package org.uee.neoforge;
 
 import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import org.uee.Uee;
-import org.uee.mc.ClientIcons;
+import org.uee.mc.ResourceManagerCapture;
 
 /**
- * NeoForge's client-side wiring for the icon phase.
+ * The client half of the NeoForge entry point.
  *
- * <p>Annotated for the client only, so the class is never loaded on a dedicated server — which matters,
- * because it reaches code that drives the render pipeline and that code does not exist there.
+ * <h2>Why a second mod class rather than a branch</h2>
+ *
+ * <p>Assets can only be read from a client's resource manager, and the only way to be handed one is to be
+ * a reload listener — see {@link ResourceManagerCapture} for why that is the sole door. Registering one
+ * means naming a client-only event class, and naming it from a class that a dedicated server also loads is
+ * how a mod acquires a crash that only happens on servers.
+ *
+ * <p>NeoForge lets a mod have more than one entry point and filter each by side, so the whole class is
+ * declared client-only and the side check is the loader's rather than a condition of ours. That is better
+ * than a runtime branch for the same reason it always is: the branch is a decision someone has to remember
+ * to make, and the annotation is one the loader enforces.
  */
-@EventBusSubscriber(modid = "uee", value = Dist.CLIENT)
+@Mod(value = Uee.MOD_ID, dist = Dist.CLIENT)
 public final class UeeNeoForgeClient {
 
-    private UeeNeoForgeClient() {
+    public UeeNeoForgeClient(IEventBus modBus) {
+        modBus.addListener(this::onRegisterClientReloadListeners);
     }
 
     /**
-     * Advances the icon phase, one batch per tick.
+     * Registers the capture.
      *
-     * <p>After the tick rather than before: rendering a batch changes render state, and doing it at the
-     * end of a tick means the state it leaves is the state the next frame starts with, rather than
-     * something the rest of tick handling has to cope with mid-way.
+     * <p>On the mod bus rather than the game bus: this is a lifecycle event of the mod's own loading, which
+     * is what the mod bus carries. The capture itself does nothing with the manager beyond remembering it,
+     * so nothing here touches the game's resource reload while it is in progress.
      */
-    @SubscribeEvent
-    public static void onClientTick(ClientTickEvent.Post event) {
-        ClientIcons.tickIfRunning(Uee.adapter());
+    private void onRegisterClientReloadListeners(RegisterClientReloadListenersEvent event) {
+        event.registerReloadListener(new ResourceManagerCapture(
+                manager -> ((NeoForgeAdapter) Uee.adapter()).bindClientResources(manager)));
     }
 }

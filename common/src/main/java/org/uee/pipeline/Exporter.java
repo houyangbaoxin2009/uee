@@ -829,6 +829,10 @@ public final class Exporter implements ElementSink {
             sb.append(", ").append(assetSkipped).append(" unchanged");
         }
         sb.append(", ").append(assetBytes / 1024).append(" KiB");
+        // The basis of the sweep, said out loud. A directory outside the declared kinds is not swept and
+        // cannot be discovered, so the report names what was asked for rather than leaving a shortfall to
+        // be puzzled over.
+        sb.append(" over ").append(org.uee.asset.AssetSweep.describe());
         return sb.toString();
     }
 

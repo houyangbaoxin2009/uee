@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.uee.asset.AssetPath;
+import org.uee.asset.AssetSweep;
 import org.uee.delta.Fingerprint;
 import org.uee.spi.BytesSource;
 
@@ -38,6 +39,7 @@ public final class AssetTest {
 
         paths();
         whatIsNotContent();
+        theDeclaredSweep();
         copying(root.resolve("copy"));
 
         System.out.println();
@@ -119,6 +121,84 @@ public final class AssetTest {
         check("nor null", !AssetPath.isCopyableNamespace(null));
     }
 
+    // ---------------------------------------------------------------- the declared sweep
+
+    /**
+     * The sweep's declared basis, checked for the property that matters.
+     *
+     * <p>The list exists because the resource API cannot be asked for everything — the empty path is an
+     * invalid path, and the rejection is swallowed, so a sweep that named nothing would collect nothing and
+     * report success. So the check that earns its place is not that the list has the right entries but that
+     * every entry is usable: each declared kind resolves to a path the copier accepts, and each root file is
+     * a file rather than a directory.
+     *
+     * <p>The same shape as the registry table's check that every declared category has a collector, and for
+     * the same reason: a declaration that nothing can act on looks identical to a declaration that works
+     * until something tries.
+     */
+    private static void theDeclaredSweep() {
+        section("the declared sweep");
+
+        check("the sweep declares something, since it cannot ask for everything",
+                !AssetSweep.KINDS.isEmpty());
+        // The number the shipped client actually has. A guess would have been close and would have missed
+        // `texts`, which holds four files and is the sort of directory a guess leaves out.
+        check("it declares the nine kinds the client has", AssetSweep.KINDS.size() == 9);
+        check("textures is among them", AssetSweep.KINDS.contains("textures"));
+        check("and lang, which is where translations live", AssetSweep.KINDS.contains("lang"));
+        check("and texts, the small one a guess would miss", AssetSweep.KINDS.contains("texts"));
+
+        // Every declared kind has to be usable as a path, or the sweep would silently collect nothing for
+        // it -- which is exactly the failure this list exists to avoid.
+        boolean allUsable = true;
+        for (String kind : AssetSweep.KINDS) {
+            if (!AssetPath.isCopyable(kind + "/something.bin")
+                    || AssetPath.outputPath("example", kind + "/something.bin") == null) {
+                allUsable = false;
+            }
+        }
+        check("every declared kind is a path the copier accepts", allUsable);
+
+        // No duplicates, since a kind visited twice would read the same files twice and report them once.
+        check("no kind is declared twice",
+                AssetSweep.KINDS.size() == new java.util.HashSet<>(AssetSweep.KINDS).size());
+        check("and no root file either",
+                AssetSweep.ROOT_FILES.size() == new java.util.HashSet<>(AssetSweep.ROOT_FILES).size());
+
+        // A root file is a file at the namespace root, so it must not look like a kind: a slash would make
+        // it unreachable by name, which is the only route it has.
+        boolean filesNotDirectories = true;
+        for (String file : AssetSweep.ROOT_FILES) {
+            if (file.contains("/") || !AssetPath.isCopyable(file)) {
+                filesNotDirectories = false;
+            }
+        }
+        check("every declared root file is a bare file name", filesNotDirectories);
+        check("sounds.json is among them, being the one the client has",
+                AssetSweep.ROOT_FILES.contains("sounds.json"));
+        // The pack build's marker is not content and must not be declared as one.
+        check("the pack marker is not declared", !AssetSweep.ROOT_FILES.contains(".mcassetsroot"));
+
+        check("the basis can be described in one line", AssetSweep.describe().contains("9 kinds"));
+        check("and naming a kind gives the prefix to list",
+                AssetSweep.prefixOf("textures").equals("textures"));
+    }
+
+    // ---------------------------------------------------------------- the declared sweep
+
+    /**
+     * The sweep's declared basis, checked for the property that matters.
+     *
+     * <p>The list exists because the resource API cannot be asked for everything — the empty path is an
+     * invalid path, and the rejection is swallowed, so a sweep that named nothing would collect nothing and
+     * report success. So the check that earns its place is not that the list has the right entries but that
+     * every entry is usable: each declared kind resolves to a path the copier accepts, and each root file is
+     * a file rather than a directory.
+     *
+     * <p>The same shape as the registry table's check that every declared category has a collector, and for
+     * the same reason: a declaration that nothing can act on looks identical to a declaration that works
+     * until something tries.
+     */
     // ---------------------------------------------------------------- copying
 
     /**

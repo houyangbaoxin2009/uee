@@ -13,7 +13,10 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+import net.minecraft.util.profiling.InactiveProfiler;
 import org.uee.Uee;
+import org.uee.mc.AbstractMinecraftAdapter;
+import org.uee.mc.ResourceManagerCapture;
 import org.uee.config.ExportConfig;
 import org.uee.config.WikiOptions;
 import org.uee.mc.AbstractMinecraftAdapter;
@@ -516,6 +519,104 @@ public final class UeeGameTests {
                         + rendered);
 
         helper.succeed();
+    }
+
+    /**
+     * Assets are collected when a client manager has been bound, driven through the real listener.
+     *
+     * <h2>What this covers that the earlier asset test could not</h2>
+     *
+     * <p>An earlier version of the asset test ran whichever branch it found, and on a dedicated server that
+     * meant the emptiness branch: it never once checked that assets are collected when they exist, which is
+     * the case the feature is for. So the positive path went unexercised while the test passed.
+     *
+     * <p>This closes that. An asset-side resource manager is built here from a temporary directory — a real
+     * one, of the client type — and handed to the real {@link ResourceManagerCapture}, which is the same
+     * object a loader registers and the only route by which a client manager is ever obtained. Then the
+     * collection runs and the records are read. Every link in the client path is therefore executed: the
+     * listener, the binding, the enumeration and the copy, with no game window anywhere.
+     *
+     * <p>The manager is unbound again afterwards. The adapter is a shared singleton, and leaving a client
+     * manager bound would make the "a dedicated server has no assets" assertion in the test beside this one
+     * untrue while it ran.
+     */
+    @GameTest(template = "empty", timeoutTicks = 600)
+    public static void assetsAreCollectedFromABoundClientManager(GameTestHelper helper) {
+        AbstractMinecraftAdapter adapter = (AbstractMinecraftAdapter) Uee.adapter();
+        java.nio.file.Path packRoot = null;
+        try {
+            packRoot = java.nio.file.Files.createTempDirectory("uee-asset-pack");
+            writeAsset(packRoot, "assets/example/textures/block/ruby_ore.png", "PNG-bytes");
+            writeAsset(packRoot, "assets/example/lang/zh_cn.json", "{\"item.example.ruby\":\"ruby\"}");
+            // A file directly under the namespace, reached by name rather than by prefix.
+            writeAsset(packRoot, "assets/example/sounds.json", "{\"block.ruby\":{}}");
+            // The pack build's marker, which must not be copied: it has no namespace.
+            writeAsset(packRoot, "assets/.mcassetsroot", "");
+            // A directory the sweep does not name. It is deliberately not collected, and the assertion
+            // below says so: the basis is a declared list because the resource API cannot be asked for
+            // everything, and a limitation that is tested is one nobody has to rediscover.
+            writeAsset(packRoot, "assets/example/invented_kind/thing.bin", "bytes");
+
+            try (var manager = new net.minecraft.server.packs.resources.MultiPackResourceManager(
+                    net.minecraft.server.packs.PackType.CLIENT_RESOURCES,
+                    java.util.List.of(new net.minecraft.server.packs.PathPackResources(
+                            new net.minecraft.server.packs.PackLocationInfo("uee-test",
+                                    net.minecraft.network.chat.Component.literal("uee test"),
+                                    net.minecraft.server.packs.repository.PackSource.DEFAULT,
+                                    java.util.Optional.empty()),
+                            packRoot)))) {
+
+                // The real listener, called the way the game calls it. Its return value is what the game
+                // waits on, so it is checked too: a listener that returned null would pass everything else
+                // here and break the client's reload.
+                ResourceManagerCapture capture =
+                        new ResourceManagerCapture(adapter::bindClientResources);
+                var future = capture.reload(null, manager, InactiveProfiler.INSTANCE,
+                        InactiveProfiler.INSTANCE, Runnable::run, Runnable::run);
+                helper.assertTrue(future != null && future.isDone(),
+                        "the capture did not complete, so a client reload would stall on it");
+
+                RecordingSink sink = new RecordingSink();
+                adapter.collectAssets(ExportConfig.builder().assets(true).build(), sink);
+
+                helper.assertTrue(sink.failures.isEmpty(),
+                        "collecting from a bound client manager failed: "
+                                + (sink.failures.isEmpty() ? "" : sink.failures.get(0)));
+                helper.assertTrue(!sink.assets.isEmpty(),
+                        "a client manager holding assets produced none, so the positive path is broken");
+                helper.assertTrue(sink.assets.contains("assets/example/textures/block/ruby_ore.png"),
+                        "the texture was not offered: " + sink.assets);
+                helper.assertTrue(sink.assets.contains("assets/example/lang/zh_cn.json"),
+                        "the language file was not offered: " + sink.assets);
+                // A file under the namespace root, which no prefix reaches and which is fetched by name.
+                helper.assertTrue(sink.assets.contains("assets/example/sounds.json"),
+                        "the root file was not offered, so the by-name fetch is not working: "
+                                + sink.assets);
+                // The marker has no namespace, so it is not content and must not appear.
+                helper.assertTrue(!sink.assets.stream().anyMatch(a -> a.endsWith(".mcassetsroot")),
+                        "the pack marker was offered as an asset: " + sink.assets);
+                // And the declared basis is asserted rather than assumed: a kind outside it is not swept.
+                helper.assertTrue(!sink.assets.stream().anyMatch(a -> a.contains("invented_kind")),
+                        "a kind outside the declared sweep was collected, so the basis is not what the"
+                                + " report claims: " + sink.assets);
+            }
+        } catch (Exception e) {
+            helper.fail("the client path threw: " + e);
+        } finally {
+            // Unbound whatever happened, so the neighbouring test's premise holds.
+            adapter.bindClientResources(null);
+            deleteRecursively(packRoot);
+        }
+
+        helper.succeed();
+    }
+
+    /** Writes a file below a temporary pack root, creating the directories. */
+    private static void writeAsset(java.nio.file.Path root, String relativePath, String content)
+            throws java.io.IOException {
+        java.nio.file.Path file = root.resolve(relativePath);
+        java.nio.file.Files.createDirectories(file.getParent());
+        java.nio.file.Files.writeString(file, content);
     }
 
     /** The mod list contains this mod and the game itself, with dependencies parsed. */

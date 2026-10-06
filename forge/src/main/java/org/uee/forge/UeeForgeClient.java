@@ -1,32 +1,36 @@
 package org.uee.forge;
 
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.client.event.RegisterClientReloadListenersEvent;
+import net.minecraftforge.eventbus.api.IEventBus;
 import org.uee.Uee;
-import org.uee.mc.ClientIcons;
+import org.uee.mc.ResourceManagerCapture;
 
 /**
- * Forge's client-side wiring for the icon phase.
+ * The client half of the Forge entry point.
  *
- * <p>Annotated for the client only, so the class is never loaded on a dedicated server — which matters,
- * because it reaches code that drives the render pipeline and that code does not exist there.
+ * <h2>Why this is a class of its own</h2>
  *
- * <p>Uses the phase-carrying tick event rather than a client-specific one, and checks the phase, so the
- * work happens once at the end of a tick rather than twice.
+ * <p>Forge's {@code @Mod} takes no side filter, so the side has to be decided at runtime — and a runtime
+ * decision is exactly where a dedicated server acquires a crash, because naming a client-only class from a
+ * class the server loads can fail before any condition is evaluated. Putting the client code in its own
+ * class and only calling into it behind a side check is the arrangement that avoids it: the class is
+ * resolved when it is first used, and on a server it never is.
+ *
+ * <p>NeoForge does the same thing with an annotation, which is why that side has no guard: a filter the
+ * loader enforces cannot be forgotten.
  */
-@Mod.EventBusSubscriber(modid = "uee", value = Dist.CLIENT)
 public final class UeeForgeClient {
 
     private UeeForgeClient() {
     }
 
-    @SubscribeEvent
-    public static void onClientTick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) {
-            return;
-        }
-        ClientIcons.tickIfRunning(Uee.adapter());
+    /** Registers the capture. Called only on a client. */
+    static void init(IEventBus modBus) {
+        modBus.addListener(UeeForgeClient::onRegisterClientReloadListeners);
+    }
+
+    private static void onRegisterClientReloadListeners(RegisterClientReloadListenersEvent event) {
+        event.registerReloadListener(new ResourceManagerCapture(
+                manager -> ((ForgeAdapter) Uee.adapter()).bindClientResources(manager)));
     }
 }

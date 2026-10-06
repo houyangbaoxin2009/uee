@@ -33,6 +33,7 @@ import org.uee.datapack.WorldgenFile;
 import org.uee.util.OrderedWork;
 import org.uee.analysis.ClassLoaderChain;
 import org.uee.asset.AssetPath;
+import org.uee.asset.AssetSweep;
 import org.uee.datapack.AdvancementFile;
 import org.uee.datapack.FunctionFile;
 import org.uee.datapack.LangFile;
@@ -1011,12 +1012,17 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
      * passed over, because "no assets in this pack" and "this program cannot see assets from here" are
      * different answers and only one of them is worth acting on.
      *
-     * <h2>The whole tree, minus what is not content</h2>
+     * <h2>What it asks for, since it cannot ask for everything</h2>
      *
-     * <p>Every file the manager exposes is offered — not a chosen list of directories. A list would be a
-     * guess about what a consumer wants, and it would silently drop whatever a pack put somewhere
-     * unexpected; {@code AssetPath} rejects only the files that are not content at all, such as the pack
-     * build's marker.
+     * <p>The sweep names the kinds it visits and the root files it fetches by name. That is not a
+     * preference: asking the manager for everything — an empty path — is rejected by its path validation and
+     * the rejection is logged and swallowed, so the caller gets an empty result and no error, which looks
+     * exactly like a pack with no assets. Nothing in the resource API enumerates a namespace either, so
+     * there is no other way to find out what is there. {@code AssetSweep} says all of this at more length,
+     * including the part that matters to a user: a directory outside its list is not swept.
+     *
+     * <p>{@code AssetPath} still rejects what is not content — the pack build's marker, anything under a dot
+     * directory — because a declared kind can still contain them.
      *
      * <p>A method of its own rather than part of {@code collectDatapacks}, despite reading from the same
      * resource manager: assets are not records, they are files, and a caller reading the names should be
@@ -1031,18 +1037,29 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
                             + " announced itself; a dedicated server has none to give"));
             return;
         }
-        Map<ResourceLocation, net.minecraft.server.packs.resources.Resource> files;
-        try {
-            // The empty prefix asks for everything the manager exposes, which on a client is the asset
-            // tree. Asking by directory would need a list of directories and would be wrong for any pack
-            // that invented one.
-            files = manager.listResources("", path -> true);
-        } catch (Throwable t) {
-            sink.failure(null, AssetPath.DIRECTORY, t);
-            return;
+        int offered = 0;
+
+        // One listing per declared kind, gathered before any copy so the records come out sorted rather
+        // than in whatever order the packs happened to be asked.
+        Map<ResourceLocation, net.minecraft.server.packs.resources.Resource> files =
+                new java.util.LinkedHashMap<>();
+        for (String kind : AssetSweep.KINDS) {
+            try {
+                files.putAll(manager.listResources(AssetSweep.prefixOf(kind), path -> true));
+            } catch (Throwable t) {
+                // One kind failing does not abandon the sweep: the others are independent, and a partly
+                // copied asset tree with a reported reason is more use than none.
+                sink.failure(null, AssetPath.DIRECTORY + "/" + kind, t);
+            }
+        }
+        // And the files that have no directory to be found under, fetched by name.
+        for (String rootFile : AssetSweep.ROOT_FILES) {
+            for (String namespace : manager.getNamespaces()) {
+                ResourceLocation id = ResourceLocation.fromNamespaceAndPath(namespace, rootFile);
+                manager.getResource(id).ifPresent(resource -> files.put(id, resource));
+            }
         }
 
-        int offered = 0;
         List<String> keys = new ArrayList<>(files.size());
         for (ResourceLocation id : files.keySet()) {
             if (!AssetPath.isCopyableNamespace(id.getNamespace()) || !AssetPath.isCopyable(id.getPath())) {
