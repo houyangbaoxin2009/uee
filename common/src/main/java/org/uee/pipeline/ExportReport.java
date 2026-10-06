@@ -63,6 +63,14 @@ public final class ExportReport {
     private final String delta;
 
     /**
+     * How the assets went, or {@code null} when none were asked for.
+     *
+     * <p>Carried beside the delta rather than folded into the artifact counts: a copied file is not a set of
+     * records this run generated, and the number a user wants when assets are on is how many were moved.
+     */
+    private final String assets;
+
+    /**
      * Builds a report.
      *
      * <p>Public because a report is a value and the job runner accepts one from a caller's own work:
@@ -76,21 +84,28 @@ public final class ExportReport {
         for (Artifact a : artifacts) {
             records += a.records();
         }
-        return new ExportReport(root, artifacts, failures, records, millis, findings, null);
+        return new ExportReport(root, artifacts, failures, records, millis, findings, null, null);
     }
 
     /** A report that also says what changed, for a run that was asked for a delta. */
     public static ExportReport of(Path root, List<Artifact> artifacts, List<String> failures,
             long millis, int findings, String deltaSummary) {
+        return of(root, artifacts, failures, millis, findings, deltaSummary, null);
+    }
+
+    /** A report that also says what happened to the assets. */
+    public static ExportReport of(Path root, List<Artifact> artifacts, List<String> failures,
+            long millis, int findings, String deltaSummary, String assetSummary) {
         long records = 0;
         for (Artifact a : artifacts) {
             records += a.records();
         }
-        return new ExportReport(root, artifacts, failures, records, millis, findings, deltaSummary);
+        return new ExportReport(root, artifacts, failures, records, millis, findings, deltaSummary,
+                assetSummary);
     }
 
     ExportReport(Path root, List<Artifact> artifacts, List<String> failures, long records,
-            long millis, int findings, String delta) {
+            long millis, int findings, String delta, String assets) {
         this.root = root;
         this.artifacts = artifacts;
         this.failures = failures;
@@ -98,6 +113,7 @@ public final class ExportReport {
         this.millis = millis;
         this.findings = findings;
         this.delta = delta;
+        this.assets = assets;
         long total = 0;
         for (Artifact a : artifacts) {
             total += a.bytes();
@@ -112,6 +128,11 @@ public final class ExportReport {
     /** What changed relative to the previous run, or {@code null} when no delta was asked for. */
     public String deltaSummary() {
         return delta;
+    }
+
+    /** What happened to the assets, or {@code null} when the run did not ask for any. */
+    public String assetSummary() {
+        return assets;
     }
 
     public List<Artifact> artifacts() {

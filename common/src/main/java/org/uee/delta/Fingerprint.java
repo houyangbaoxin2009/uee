@@ -69,6 +69,22 @@ public final class Fingerprint {
     }
 
     /**
+     * Fingerprints a stream, leaving it for the caller to close.
+     *
+     * <p>Streamed for the same reason a file is: this is called on assets that may be megabytes, and the
+     * memory model for a run is a fixed ceiling rather than a fraction of the input.
+     */
+    public static String of(InputStream in) throws IOException {
+        MessageDigest digest = digest();
+        byte[] buffer = new byte[1 << 14];
+        int read;
+        while ((read = in.read(buffer)) > 0) {
+            digest.update(buffer, 0, read);
+        }
+        return hex(digest.digest());
+    }
+
+    /**
      * Fingerprints a string.
      *
      * <p>Its bytes are UTF-8, fixed here rather than left to the platform's default charset, because a

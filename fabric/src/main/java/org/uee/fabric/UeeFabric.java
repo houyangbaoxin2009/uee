@@ -38,7 +38,10 @@ public final class UeeFabric implements ModInitializer {
 
         if (FabricLoader.getInstance().getEnvironmentType() == EnvType.CLIENT) {
             ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
-                adapter.bindResources(client.getResourceManager());
+                // The client's manager, kept apart from the server's: it is the only one that sees
+                // assets, and it cannot see data. Binding it over the server's would trade one side's
+                // reach for the other's.
+                adapter.bindClientResources(client.getResourceManager());
                 // The client's own registry access: an integrated server holds the data-loaded
                 // registries, and a client connected to a server has its synced copy.
                 adapter.bindRegistryAccess(client.level == null ? null

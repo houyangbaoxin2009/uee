@@ -81,6 +81,19 @@ public final class ExportConfig {
      * which is a cost nobody should pay without asking for the feature that needs it.
      */
     private final boolean delta;
+
+    /**
+     * Whether to copy the pack's assets — textures, models, sounds — into the output.
+     *
+     * <p>Off by default, and that is the documented intent rather than a limitation: the one-key command is
+     * meant to produce the data side without crossing into assets, which are thousands of files and
+     * megabytes of bytes nobody asked for. A run that wants a complete import package turns this on.
+     *
+     * <p>The bytes are copied verbatim, never decoded. That is not only about speed: decoding changes the
+     * hash, and a fingerprint is taken over the bytes that land on disk, so a re-encoded texture would be a
+     * different artifact on every run and the delta would report every asset as changed forever.
+     */
+    private final boolean assets;
     private final Set<String> includeTags;
     private final Set<String> excludeTags;
     private final long maxFileBytes;
@@ -116,6 +129,7 @@ public final class ExportConfig {
         this.fields = b.fields;
         this.dryRun = b.dryRun;
         this.delta = b.delta;
+        this.assets = b.assets;
         this.includeTags = Collections.unmodifiableSet(new LinkedHashSet<>(b.includeTags));
         this.excludeTags = Collections.unmodifiableSet(new LinkedHashSet<>(b.excludeTags));
         this.maxFileBytes = b.maxFileBytes;
@@ -268,6 +282,11 @@ public final class ExportConfig {
     /** Whether to write only what changed since the previous run. */
     public boolean delta() {
         return delta;
+    }
+
+    /** Whether to copy the pack's assets into the output. */
+    public boolean assets() {
+        return assets;
     }
 
     /** Only elements carrying one of these tags. Empty means no tag restriction. */
@@ -439,6 +458,7 @@ public final class ExportConfig {
         // silently turn a delta run into a full one, which looks like the feature not working rather
         // than like a copied field being missing.
         b.delta = delta;
+        b.assets = assets;
         b.includeTags = new LinkedHashSet<>(includeTags);
         b.excludeTags = new LinkedHashSet<>(excludeTags);
         b.maxFileBytes = maxFileBytes;
@@ -513,6 +533,7 @@ public final class ExportConfig {
         private FieldMask fields = FieldMask.all();
         private boolean dryRun = false;
         private boolean delta = false;
+        private boolean assets = false;
         private Set<String> includeTags = new LinkedHashSet<>();
         private Set<String> excludeTags = new LinkedHashSet<>();
         private long maxFileBytes = 0;
@@ -629,6 +650,12 @@ public final class ExportConfig {
 
         public Builder fields(FieldMask mask) {
             this.fields = mask == null ? FieldMask.all() : mask;
+            return this;
+        }
+
+        /** Asks for the pack's assets to be copied into the output. */
+        public Builder assets(boolean on) {
+            this.assets = on;
             return this;
         }
 

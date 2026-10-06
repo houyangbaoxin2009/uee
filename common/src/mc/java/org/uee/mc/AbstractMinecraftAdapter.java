@@ -31,6 +31,7 @@ import org.uee.config.ExportConfig;
 import org.uee.datapack.TagFile;
 import org.uee.datapack.WorldgenFile;
 import org.uee.util.OrderedWork;
+import org.uee.asset.AssetPath;
 import org.uee.datapack.AdvancementFile;
 import org.uee.datapack.FunctionFile;
 import org.uee.datapack.LangFile;
@@ -556,6 +557,31 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
      * which is the kind of divergence that copies produce; having one implementation removes the
      * possibility.
      */
+    /**
+     * The client's resource manager, when one has been bound.
+     *
+     * <h2>Why this is a second binding and not the same one</h2>
+     *
+     * <p>A resource manager is built for one side of the game and can only see that side: a server's sees
+     * {@code data/}, a client's sees {@code assets/}. So the two are not interchangeable and binding one
+     * over the other does not extend what can be read — it <em>replaces</em> it. That is not a subtlety: an
+     * earlier version bound the client's manager to the same field the data categories use, which would have
+     * left a client able to read assets and unable to read its own datapacks.
+     *
+     * <p>Kept separate from {@link #bindResources} so each side keeps its own, and so a loader that has no
+     * client hook simply leaves this null and produces no assets rather than producing the wrong ones. The
+     * second point is the one that matters: with one manager, a server run would have offered its
+     * <em>datapack</em> files as assets, because a manager asked for everything returns everything it can
+     * see and nothing in a resource location says which side it came from.
+     */
+    private volatile net.minecraft.server.packs.resources.ResourceManager clientResources;
+
+    /** Binds the client's resource manager, which is the only one that can see assets. */
+    public void bindClientResources(
+            net.minecraft.server.packs.resources.ResourceManager resourceManager) {
+        this.clientResources = resourceManager;
+    }
+
     public void bindResources(net.minecraft.server.packs.resources.ResourceManager resourceManager) {
         this.resources = resourceManager;
         this.translator = null;
@@ -902,6 +928,90 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
             return null;
         }
         return TagFile.of(sawReplace, merged);
+    }
+
+    // ---------------------------------------------------------------- assets
+
+    /**
+     * Offers the pack's assets for copying.
+     *
+     * <h2>Nothing is decoded, and that is the point</h2>
+     *
+     * <p>Textures, models and sounds are handed over as streams and copied byte for byte. Nothing here
+     * opens a PNG to learn its size or re-encodes an OGG: the design forbids it, and the reason is not only
+     * speed. A fingerprint is taken over the bytes that land on disk, so a re-encoded texture would be a
+     * different artifact every time the encoder changed, and the delta that exists to avoid rewriting would
+     * report every asset as changed on every run, forever.
+     *
+     * <h2>Why this can come up empty, and why it says so</h2>
+     *
+     * <p>Assets live under {@code assets/}, and a resource manager only ever sees its own side: a client's
+     * sees assets, a dedicated server's sees data. So on a dedicated server there is nothing to copy — not
+     * because anything is wrong, but because the files are not there to read. That is reported rather than
+     * passed over, because "no assets in this pack" and "this program cannot see assets from here" are
+     * different answers and only one of them is worth acting on.
+     *
+     * <h2>The whole tree, minus what is not content</h2>
+     *
+     * <p>Every file the manager exposes is offered — not a chosen list of directories. A list would be a
+     * guess about what a consumer wants, and it would silently drop whatever a pack put somewhere
+     * unexpected; {@code AssetPath} rejects only the files that are not content at all, such as the pack
+     * build's marker.
+     *
+     * <p>A method of its own rather than part of {@code collectDatapacks}, despite reading from the same
+     * resource manager: assets are not records, they are files, and a caller reading the names should be
+     * able to tell which one produces artifacts and which one copies bytes.
+     */
+    public void collectAssets(ExportConfig config, ElementSink sink) {
+        net.minecraft.server.packs.resources.ResourceManager manager = clientResources;
+        if (manager == null) {
+            sink.failure(null, AssetPath.DIRECTORY, new IllegalStateException(
+                    "no client resource manager is bound. Assets live under assets/, which only a client's"
+                            + " resource manager can see, so assets are copied on a client that has"
+                            + " announced itself; a dedicated server has none to give"));
+            return;
+        }
+        Map<ResourceLocation, net.minecraft.server.packs.resources.Resource> files;
+        try {
+            // The empty prefix asks for everything the manager exposes, which on a client is the asset
+            // tree. Asking by directory would need a list of directories and would be wrong for any pack
+            // that invented one.
+            files = manager.listResources("", path -> true);
+        } catch (Throwable t) {
+            sink.failure(null, AssetPath.DIRECTORY, t);
+            return;
+        }
+
+        int offered = 0;
+        List<String> keys = new ArrayList<>(files.size());
+        for (ResourceLocation id : files.keySet()) {
+            if (!AssetPath.isCopyableNamespace(id.getNamespace()) || !AssetPath.isCopyable(id.getPath())) {
+                continue;
+            }
+            if (!config.acceptsNamespace(id.getNamespace())) {
+                continue;
+            }
+            keys.add(id.toString());
+        }
+        keys.sort(null);
+
+        for (String key : keys) {
+            ResourceLocation id = ResourceLocation.parse(key);
+            String target = AssetPath.outputPath(id.getNamespace(), id.getPath());
+            if (target == null) {
+                continue;
+            }
+            net.minecraft.server.packs.resources.Resource resource = files.get(id);
+            offered++;
+            sink.asset(target, () -> resource.open());
+        }
+
+        if (offered == 0) {
+            sink.failure(null, AssetPath.DIRECTORY, new IllegalStateException(
+                    "the client resource manager exposed no asset files. A client that has not finished"
+                            + " loading its resources has none to give, which is not the same as a pack"
+                            + " with no assets"));
+        }
     }
 
     // ---------------------------------------------------------------- translation tables

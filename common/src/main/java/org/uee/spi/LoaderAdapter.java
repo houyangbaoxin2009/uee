@@ -51,6 +51,19 @@ public interface LoaderAdapter {
      */
     void collectDatapacks(ExportConfig config, Collection<ElementKind> wanted, ElementSink sink);
 
+    /**
+     * Offers the pack's assets for copying, when the run asked for them.
+     *
+     * <p>Separate from the collection calls because it collects nothing: an asset has no element to
+     * describe, only bytes to place. An adapter that cannot see assets — a dedicated server, whose resource
+     * manager only sees {@code data/} — offers none and reports why through the sink, since "this pack has
+     * no assets" and "this side cannot see assets" are different answers and only one is worth acting on.
+     *
+     * <p>A default method, so a test adapter that has no assets to offer compiles without saying so.
+     */
+    default void collectAssets(ExportConfig config, ElementSink sink) {
+    }
+
     /** Debug/environment sections. Cheap to produce and never load-bearing for the export. */
     List<DebugSection> debugSections();
 

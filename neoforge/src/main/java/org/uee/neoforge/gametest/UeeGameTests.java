@@ -445,6 +445,42 @@ public final class UeeGameTests {
         helper.succeed();
     }
 
+    /**
+     * The asset enumeration finds what a client has and reports what a server cannot.
+     *
+     * <p>This is the only part of asset handling that cannot be checked without a game, because it is the
+     * only part that needs a resource manager. It is also the part with the interesting answer: a dedicated
+     * server's manager sees {@code data/} and not {@code assets/}, so an export run here finds nothing — and
+     * the assertion is that it says so rather than going quiet. "This pack has no assets" and "this side
+     * cannot see assets" are different answers, and a test run on a server is the only place the second one
+     * occurs.
+     */
+    @GameTest(template = "empty", timeoutTicks = 600)
+    public static void assetsAreOfferedOrExplained(GameTestHelper helper) {
+        LoaderAdapter adapter = Uee.adapter();
+        RecordingSink sink = new RecordingSink();
+        adapter.collectAssets(ExportConfig.builder().assets(true).build(), sink);
+
+        // A dedicated server has no client manager, and so no assets. Asserting the emptiness is the point
+        // rather than a formality: the first version of this ran whichever branch it found, and because a
+        // server's manager can see its *datapack* files, "found something" would have meant offering
+        // recipes and advancements as assets. The check that would have caught it is this one -- that on
+        // this side there is nothing to offer -- and it only works if the emptiness is required.
+        helper.assertTrue(sink.assets.isEmpty(),
+                "a dedicated server offered " + sink.assets.size() + " file(s) as assets; a server has no"
+                        + " client resource manager, so this can only be datapack files being mistaken for"
+                        + " assets. First: " + (sink.assets.isEmpty() ? "" : sink.assets.get(0)));
+        // And it has to say why, rather than leaving a user to wonder whether the pack simply had none.
+        helper.assertTrue(!sink.failures.isEmpty(),
+                "no assets were offered and no reason was given, so a user cannot tell an absent client"
+                        + " from an empty pack");
+        helper.assertTrue(sink.failures.get(0).contains("assets/"),
+                "the reason does not mention where assets live, so it does not explain anything: "
+                        + sink.failures.get(0));
+
+        helper.succeed();
+    }
+
     /** The mod list contains this mod and the game itself, with dependencies parsed. */
     @GameTest(template = "empty", timeoutTicks = 200)
     public static void modListIsAvailable(GameTestHelper helper) {
@@ -588,6 +624,15 @@ public final class UeeGameTests {
         final List<String> generics = new ArrayList<>();
         final List<String> failures = new ArrayList<>();
 
+        /**
+         * The paths of assets offered for copying.
+         *
+         * <p>Only the paths, and the bytes are not read: this records what the collector said exists, which
+         * is the part a game test can check. Whether the copy itself works is checked without a game, where
+         * the files are real and the assertions can be about content.
+         */
+        final List<String> assets = new ArrayList<>();
+
         @Override
         public void mod(ModElement e) {
         }
@@ -615,6 +660,11 @@ public final class UeeGameTests {
         public void generic(ElementKind kind, String namespace, String key, String nameZh,
                 String nameEn, String[] listValues, String[] extra) {
             generics.add(kind.singular() + ":" + key);
+        }
+
+        @Override
+        public void asset(String relativePath, org.uee.spi.BytesSource source) {
+            assets.add(relativePath);
         }
 
         @Override

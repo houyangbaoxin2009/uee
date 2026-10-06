@@ -333,6 +333,22 @@ tasks.register('deltaTest', JavaExec) {
     args = [layout.buildDirectory.dir('delta-test').get().asFile.absolutePath]
 }
 
+/**
+ * Runs the asset path and copy checks.
+ *
+ * <p>The path rules are pure; the copying is exercised against real files, including the case the feature
+ * exists for -- a second pass over the same bytes writes nothing. The enumeration needs a resource manager
+ * and is covered by a game test instead.
+ */
+tasks.register('assetTest', JavaExec) {
+    description = 'Runs the asset path and copy checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.AssetTest'
+    args = [layout.buildDirectory.dir('asset-test').get().asFile.absolutePath]
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
@@ -340,5 +356,5 @@ tasks.register('verifyAll') {
     dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest',
             'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest', 'scaleTest',
             'tagTest', 'lootTableTest', 'iconTest', 'categoryTest', 'advancementTest',
-            'worldgenTest', 'mcfunctionTest', 'deltaTest'
+            'worldgenTest', 'mcfunctionTest', 'deltaTest', 'assetTest'
 }

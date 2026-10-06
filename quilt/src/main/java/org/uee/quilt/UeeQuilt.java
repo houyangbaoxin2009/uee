@@ -33,7 +33,7 @@ public final class UeeQuilt implements ModInitializer {
 
         if (FabricLoader.getInstance().getEnvironmentType() == EnvType.CLIENT) {
             ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
-                adapter.bindResources(client.getResourceManager());
+                adapter.bindClientResources(client.getResourceManager());
                 if (client.getConnection() != null) {
                     adapter.bindRecipes(client.getConnection().getRecipeManager().getRecipes());
                 }

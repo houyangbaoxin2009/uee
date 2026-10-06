@@ -60,7 +60,7 @@ public final class ConfigFile {
     public static final String[] KNOWN_KEYS = {
             "output", "package", "formats", "kinds",
             "analyze", "analysis_separate", "package_per_kind", "quiet",
-            "fields", "exclude_fields", "dry_run", "delta", "include_tags", "exclude_tags",
+            "fields", "exclude_fields", "dry_run", "delta", "assets", "include_tags", "exclude_tags",
             "max_file_mb",
             "icons", "pretty", "incremental", "include_paths",
             "shard_by_namespace", "shard_size", "memory_limit_mb", "threads",
@@ -81,6 +81,9 @@ public final class ConfigFile {
 
     /** Whether the file says anything about the delta. Null means it does not, which is not "off". */
     private final Boolean delta;
+
+    /** Whether the file says anything about assets. Null means it does not, which is not "off". */
+    private final Boolean assets;
     private final Set<String> includeTags;
     private final Set<String> excludeTags;
     private final Integer maxFileMb;
@@ -124,6 +127,7 @@ public final class ConfigFile {
                 : FieldMask.of(b.includeFields, b.excludeFields);
         this.dryRun = b.dryRun;
         this.delta = b.delta;
+        this.assets = b.assets;
         this.includeTags = b.includeTags;
         this.excludeTags = b.excludeTags;
         this.maxFileMb = b.maxFileMb;
@@ -227,6 +231,9 @@ public final class ConfigFile {
         }
         if (delta != null) {
             keys.add("delta");
+        }
+        if (assets != null) {
+            keys.add("assets");
         }
         if (includeTags != null) {
             keys.add("include_tags");
@@ -356,6 +363,9 @@ public final class ConfigFile {
         }
         if (delta != null) {
             b.delta(delta);
+        }
+        if (assets != null) {
+            b.assets(assets);
         }
         if (includeTags != null) {
             for (String tag : includeTags) {
@@ -513,6 +523,7 @@ public final class ConfigFile {
                 case "exclude_fields" -> b.excludeFields = new LinkedHashSet<>(strings(value));
                 case "dry_run" -> b.dryRun = value.asBool();
                 case "delta" -> b.delta = value.asBool();
+                case "assets" -> b.assets = value.asBool();
                 case "include_tags" -> b.includeTags = new LinkedHashSet<>(strings(value));
                 case "exclude_tags" -> b.excludeTags = new LinkedHashSet<>(strings(value));
                 case "max_file_mb" -> b.maxFileMb = (int) value.asInt();
@@ -724,6 +735,19 @@ public final class ConfigFile {
                 include_tags = []
                 // 这些标签的元素跳过 / elements carrying these are skipped
                 exclude_tags = []
+
+                // 资产导出：把 assets/<命名空间>/ 下的**全部文件原样拷贝**到输出（贴图/模型/音效/语言文件…）。
+                // ★ **字节流原样拷贝，绝不解码**——解码会改变哈希，而指纹是对落盘字节取的 ⇒ 一旦重编码，
+                // 每次跑都会被判为「变了」，差量就永远在重写。★ 默认关（设计：一键命令只走数据侧、不跨到资产）。
+                // ★ 只能在**客户端**生效：资产在 assets/ 下，专用服务器的资源管理器看不见它，此时会**明确报告**。
+                // Copies every file under assets/<namespace>/ into the output verbatim -- textures, models,
+                // sounds, language files. Never decoded: decoding changes the hash, and a fingerprint is
+                // taken over the bytes that land on disk, so a re-encoded texture would be judged changed on
+                // every run and the delta would rewrite it forever. Off by default, since the one-key
+                // command is meant to stay on the data side. Works on a client only: assets live under
+                // assets/, which a dedicated server's resource manager cannot see, and that is reported
+                // rather than passed over.
+                assets = false
 
                 // 差量导出：只写相对上一份快照变化了的分片，未变的不重写、消失的被删除。
                 // 快照存放在输出目录下的 `.uee-snapshot`（指纹 = 分片内容的 SHA-256）。
@@ -967,6 +991,7 @@ public final class ConfigFile {
         v.put("exclude_fields", list(config.fields().exclude()));
         v.put("dry_run", Boolean.toString(config.dryRun()));
         v.put("delta", Boolean.toString(config.delta()));
+        v.put("assets", Boolean.toString(config.assets()));
         v.put("include_tags", list(config.includeTags()));
         v.put("exclude_tags", list(config.excludeTags()));
         v.put("max_file_mb", Long.toString(config.maxFileBytes() / (1024 * 1024)));
@@ -1063,6 +1088,7 @@ public final class ConfigFile {
         private Set<String> excludeFields;
         private Boolean dryRun;
         private Boolean delta;
+        private Boolean assets;
         private Set<String> includeTags;
         private Set<String> excludeTags;
         private Integer maxFileMb;
@@ -1174,6 +1200,11 @@ public final class ConfigFile {
 
         public Builder excludeFields(Set<String> names) {
             this.excludeFields = names;
+            return this;
+        }
+
+        public Builder assets(boolean on) {
+            this.assets = on;
             return this;
         }
 

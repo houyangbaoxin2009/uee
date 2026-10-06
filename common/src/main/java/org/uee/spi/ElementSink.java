@@ -62,4 +62,24 @@ public interface ElementSink {
      * crash-isolation contract: one bad element must never abort the whole export.
      */
     void failure(ElementKind kind, String registryName, Throwable error);
+
+    /**
+     * Offers a file for copying into the output.
+     *
+     * <p>Assets are not records: there is no element to describe and nothing to parse, only bytes that have
+     * to end up somewhere. So they do not go through the sharded writer path — they are copied, and the
+     * pipeline owns the streaming, the fingerprint and the decision about whether the copy is needed at all.
+     *
+     * <p>The collector's job is therefore only to say what exists and where it can be read from. That keeps
+     * the layer that knows about Minecraft out of the layer that knows about the output, which is the same
+     * split the icon phase uses.
+     *
+     * <p>A default method, because the sink is implemented by test harnesses as well as by the pipeline and
+     * a harness that does not care about assets should not have to say so.
+     *
+     * @param relativePath where the file goes, relative to the export root, with forward slashes
+     * @param source the bytes; openable more than once, since the pipeline may read it twice
+     */
+    default void asset(String relativePath, BytesSource source) {
+    }
 }

@@ -124,6 +124,7 @@ public final class SmokeTest {
         }
 
         problems += deltaRuns(root, config, catalog);
+        problems += assetRun(root, config, catalog);
 
         System.out.println();
         System.out.println(problems == 0 ? "STRUCTURE: OK" : "STRUCTURE: " + problems + " PROBLEM(S)");
@@ -227,6 +228,77 @@ public final class SmokeTest {
             out.put("error", -1L);
         }
         return out;
+    }
+
+    // ---------------------------------------------------------------- assets, end to end
+
+    /**
+     * Runs an export with assets on and checks the copies, twice.
+     *
+     * <p>The fixture has assets to offer, so this exercises the whole path: the pipeline's streaming copy,
+     * the verbatim guarantee, and the delta's behaviour on assets — which differs from a shard's, because
+     * the source bytes exist before the copy and can be fingerprinted without writing anything.
+     *
+     * @return the number of problems found
+     */
+    private static int assetRun(Path root, ExportConfig base, DatapackCatalog catalog)
+            throws IOException {
+        System.out.println();
+        System.out.println("== assets, over the real pipeline ==");
+        int problems = 0;
+
+        ExportConfig assetConfig = base.toBuilder().assets(true).delta(true).build();
+        ExportReport first = new Exporter(new FakeAdapter(), assetConfig, root,
+                AnalysisEngine.standard(), catalog).run();
+        String summary = first.assetSummary();
+        System.out.println("  first run:  " + summary);
+        if (summary == null) {
+            System.out.println("  FAIL the run asked for assets and none were offered");
+            return problems + 1;
+        }
+
+        // Whatever was offered must have been written, since nothing was there before.
+        List<Path> copied = assetFiles(root);
+        System.out.println("  " + copied.size() + " file(s) under the asset directory");
+        if (copied.isEmpty()) {
+            System.out.println("  FAIL the report claims assets but nothing is on disk");
+            problems++;
+        }
+
+        // A second run over the same content: every asset is recognised from its source, so nothing is
+        // written -- not even a temporary, which is the difference from a shard.
+        Map<String, Long> before = sizesOf(root);
+        ExportReport second = new Exporter(new FakeAdapter(), assetConfig, root,
+                AnalysisEngine.standard(), catalog).run();
+        System.out.println("  second run: " + second.assetSummary());
+        String secondSummary = second.assetSummary();
+        if (secondSummary == null || !secondSummary.contains("0 copied")) {
+            System.out.println("  FAIL the second run copied assets again, which the delta should prevent");
+            problems++;
+        }
+        if (!sizesOf(root).equals(before)) {
+            System.out.println("  FAIL a file changed on a run that had nothing to write");
+            problems++;
+        }
+        int parts = countPartFiles(root);
+        if (parts != 0) {
+            System.out.println("  FAIL " + parts + " temporary file(s) were left behind");
+            problems++;
+        }
+
+        System.out.println(problems == 0 ? "  assets: OK" : "  assets: " + problems + " problem(s)");
+        return problems;
+    }
+
+    /** Every file below the asset directory, so the copies can be counted rather than trusted to a report. */
+    private static List<Path> assetFiles(Path root) throws IOException {
+        Path assets = root.resolve("assets");
+        if (!Files.isDirectory(assets)) {
+            return List.of();
+        }
+        try (var walk = Files.walk(assets)) {
+            return walk.filter(Files::isRegularFile).toList();
+        }
     }
 
     // ---------------------------------------------------------------- structural validation
@@ -511,6 +583,22 @@ public final class SmokeTest {
         }
 
         @Override
+        public void collectAssets(ExportConfig config, org.uee.spi.ElementSink sink) {
+            offer(sink, "assets/example/textures/block/ruby_ore.png", "\u0089PNG-fixture");
+            offer(sink, "assets/example/models/item/ruby.json", "{\"parent\":\"item/generated\"}");
+            offer(sink, "assets/example/lang/zh_cn.json", "{\"item.example.ruby\":\"\u7ea2\u5b9d\u77f3\"}");
+            // An empty file: a copy that produced nothing would look the same as one that succeeded, so it
+            // is here to be checked.
+            offer(sink, "assets/example/sounds/empty.ogg", "");
+            // A dot in the middle of a name is not a dotfile start.
+            offer(sink, "assets/example/textures/block/ruby.ore.v2.png", "PNG");
+        }
+
+        private static void offer(org.uee.spi.ElementSink sink, String path, String content) {
+            byte[] bytes = content.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            sink.asset(path, () -> new java.io.ByteArrayInputStream(bytes));
+        }
+
         public void collectDatapacks(ExportConfig config, Collection<ElementKind> wanted,
                 ElementSink sink) {
             if (!wanted.contains(ElementKind.RECIPE)) {

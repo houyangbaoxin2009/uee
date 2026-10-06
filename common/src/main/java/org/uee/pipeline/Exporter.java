@@ -3,6 +3,10 @@ package org.uee.pipeline;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.StandardCopyOption;
+import org.uee.spi.BytesSource;
+import org.uee.delta.Fingerprint;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -105,6 +109,12 @@ public final class Exporter implements ElementSink {
 
     /** How many stale artifacts this run removed, for the summary. */
     private int deletedByDelta;
+
+    /** Assets offered for copying, how many were actually written, and how many were skipped as unchanged. */
+    private int assetCount;
+    private int assetCopied;
+    private int assetSkipped;
+    private long assetBytes;
     /** Facts collection observed, for the analyses to read. */
     private final AnalysisContext context;
     private final AnalysisEngine engine;
@@ -197,6 +207,11 @@ public final class Exporter implements ElementSink {
                 safe(() -> adapter.collectDatapacks(config, registryKinds, this));
             }
 
+            // --- assets: files rather than records, so they are copied on their own ---
+            if (config.assets()) {
+                safe(() -> adapter.collectAssets(config, this));
+            }
+
             // --- analysis: reads the facts collection just recorded ---
             if (!engine.analyses().isEmpty()) {
                 runAnalyses(kinds);
@@ -212,7 +227,9 @@ public final class Exporter implements ElementSink {
         // The summary is built before the report so the report carries it; a caller that wants to know
         // what changed reads it from there rather than from a runner it would have to hold on to.
         String deltaText = deltaSummary();
-        return ExportReport.of(root, artifacts(), failureMessages(), millis, findings, deltaText);
+        String assetText = assetSummary();
+        return ExportReport.of(root, artifacts(), failureMessages(), millis, findings, deltaText,
+                assetText);
     }
 
     /**
@@ -563,6 +580,92 @@ public final class Exporter implements ElementSink {
     }
 
     /**
+     * Copies a file into the output.
+     *
+     * <h2>Fingerprint first, which is what makes assets cheap</h2>
+     *
+     * <p>A record's bytes only exist once they have been generated, so a shard has to be written before it
+     * can be compared and thrown away. An asset is the opposite: the bytes already exist at the source, so
+     * hashing the source answers the question before anything is written. When the answer is "unchanged",
+     * the run does one read and <b>no write at all</b> — which is the whole point of a delta, and it is
+     * only available here because the copy is verbatim. A re-encoded texture would have to be produced
+     * before it could be compared.
+     *
+     * <p>The cost is a second read of a changed file: once to hash, once to copy. That trade is the right
+     * way round, since the common case in an incremental run is that nothing changed.
+     *
+     * <h2>Failure is per file</h2>
+     *
+     * <p>One unreadable texture does not stop the export; it is recorded as a failure and the next file is
+     * tried. A withheld or truncated asset in a pack is a normal thing to find, and the design asks for
+     * isolation at this granularity.
+     */
+    @Override
+    public void asset(String relativePath, BytesSource source) {
+        if (relativePath == null || source == null) {
+            return;
+        }
+        assetCount++;
+        try {
+            String fingerprint;
+            try (java.io.InputStream in = source.open()) {
+                fingerprint = Fingerprint.of(in);
+            }
+
+            Path target = root.resolve(relativePath);
+            boolean exists = Files.isRegularFile(target);
+
+            if (config.dryRun()) {
+                // The bytes are still read and hashed, so the fingerprint in the report is real, but
+                // nothing is written and nothing is recorded -- a dry run describes what would happen.
+                assetBytes += Files.exists(target) ? Files.size(target) : 0;
+                return;
+            }
+
+            if (delta != null) {
+                DeltaPlan.Verdict verdict = delta.record(relativePath, fingerprint);
+                if (!delta.shouldWrite(verdict, exists)) {
+                    // Unchanged and present: the bytes on disk are already these bytes. Nothing written.
+                    assetSkipped++;
+                    return;
+                }
+            }
+
+            writeAsset(target, source);
+            assetBytes += Files.size(target);
+        } catch (Throwable t) {
+            failures.add(new Failure(null, relativePath, t));
+        }
+    }
+
+    /**
+     * Streams the source to a temporary and moves it into place.
+     *
+     * <p>Through a temporary for the same reason a shard is: an interrupted copy must not leave a truncated
+     * texture where a complete one was, since a consumer reading it would have no way to tell. The move is
+     * what makes the file either the old one or the whole new one.
+     */
+    private void writeAsset(Path target, BytesSource source) throws IOException {
+        Path parent = target.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        Path temporary = target.resolveSibling(target.getFileName() + ".part");
+        try (java.io.InputStream in = source.open();
+                java.io.OutputStream out = Files.newOutputStream(temporary,
+                        StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                        StandardOpenOption.WRITE)) {
+            byte[] buffer = new byte[1 << 14];
+            int read;
+            while ((read = in.read(buffer)) > 0) {
+                out.write(buffer, 0, read);
+            }
+        }
+        Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+        assetCopied++;
+    }
+
+    /**
      * Reads the previous snapshot, if a delta was asked for.
      *
      * <p>Read before anything is collected rather than lazily, because every shard's decision depends on
@@ -706,6 +809,27 @@ public final class Exporter implements ElementSink {
             return summary + " (nothing to do)";
         }
         return summary;
+    }
+
+    /**
+     * What happened to the assets.
+     *
+     * <p>Reported separately from the sharded artifacts because they are a different kind of thing: a shard
+     * is a set of records this run generated, an asset is a file that was copied or recognised as already
+     * being there. Folding them into one count would hide the only number a user cares about when assets
+     * are on, which is how many files were moved.
+     */
+    private String assetSummary() {
+        if (assetCount == 0) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(assetCount).append(" assets, ").append(assetCopied).append(" copied");
+        if (assetSkipped > 0) {
+            sb.append(", ").append(assetSkipped).append(" unchanged");
+        }
+        sb.append(", ").append(assetBytes / 1024).append(" KiB");
+        return sb.toString();
     }
 
     /** One element that could not be collected. */
