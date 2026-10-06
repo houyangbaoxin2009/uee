@@ -29,6 +29,7 @@ import net.minecraft.world.item.crafting.ShapelessRecipe;
 import net.minecraft.world.level.block.Block;
 import org.uee.config.ExportConfig;
 import org.uee.datapack.TagFile;
+import org.uee.datapack.WorldgenFile;
 import org.uee.util.OrderedWork;
 import org.uee.datapack.AdvancementFile;
 import org.uee.datapack.LangFile;
@@ -271,6 +272,9 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         }
         if (wanted.contains(ElementKind.ADVANCEMENT)) {
             collectAdvancements(config, sink);
+        }
+        if (wanted.contains(ElementKind.WORLDGEN)) {
+            collectWorldgen(config, sink);
         }
     }
 
@@ -968,6 +972,58 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
                         new String[] {"locale", file.locale(), "keys", Integer.toString(file.size())}));
             } catch (Throwable t) {
                 return List.of(new Prepared.Bad(ElementKind.LANG, id.toString(), t));
+            }
+        }, sink);
+    }
+
+    // ---------------------------------------------------------------- world generation
+
+    /**
+     * Collects world generation from {@code data/<ns>/worldgen/<kind>/<path>.json}.
+     *
+     * <p>A directory sweep rather than a registry walk, and the difference is deliberate. Fourteen
+     * registries load from these files, and walking them would need a running server for thirteen of the
+     * fourteen — while reading the files works anywhere, including on a dedicated server, and answers the
+     * question this half of the export exists to answer: what did the pack write.
+     *
+     * <p>The trade is that it cannot say what the game ended up with after other packs overrode it. For
+     * the two kinds where that matters, biomes and structures, there are registry categories that do say,
+     * so both answers are available and neither is guessed at.
+     */
+    private void collectWorldgen(ExportConfig config, ElementSink sink) {
+        net.minecraft.server.packs.resources.ResourceManager manager = resources;
+        if (manager == null) {
+            return;
+        }
+        Map<ResourceLocation, net.minecraft.server.packs.resources.Resource> files;
+        try {
+            files = manager.listResources(WorldgenFile.directory(),
+                    path -> path.getPath().endsWith(".json"));
+        } catch (Throwable t) {
+            sink.failure(ElementKind.WORLDGEN, WorldgenFile.directory(), t);
+            return;
+        }
+
+        List<String> keys = new ArrayList<>(files.size());
+        for (ResourceLocation id : files.keySet()) {
+            if (WorldgenFile.keyOf(id.getPath()) != null && config.acceptsNamespace(id.getNamespace())) {
+                keys.add(id.toString());
+            }
+        }
+        keys.sort(null);
+
+        collectPrepared(config, keys, key -> {
+            ResourceLocation id = ResourceLocation.parse(key);
+            try {
+                String kind = WorldgenFile.kindOf(id.getPath());
+                WorldgenFile.Worldgen worldgen = WorldgenFile.parse(kind, readAll(files.get(id)));
+                // The key is the kind and the name together: two kinds can hold the same name, and the
+                // records would otherwise be indistinguishable.
+                return List.of(new Prepared.Generic(ElementKind.WORLDGEN, id.getNamespace(),
+                        WorldgenFile.keyOf(id.getPath()), null, null, worldgen.referenceArray(),
+                        WorldgenFile.extraPairs(worldgen)));
+            } catch (Throwable t) {
+                return List.of(new Prepared.Bad(ElementKind.WORLDGEN, id.toString(), t));
             }
         }, sink);
     }

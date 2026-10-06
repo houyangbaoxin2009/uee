@@ -284,11 +284,28 @@ tasks.register('advancementTest', JavaExec) {
     mainClass = 'org.uee.AdvancementTest'
 }
 
+/**
+ * Runs the world-generation checks.
+ *
+ * <p>Unusual among these in that it parses the shipped data when a Minecraft jar is on the machine --
+ * a thousand files across fourteen kinds with almost nothing in common, two of whose facts are
+ * counter-intuitive. A sample can encode a belief about those; a thousand real files cannot. The jar is
+ * looked for rather than required, and the survey reports itself as skipped when there is none.
+ */
+tasks.register('worldgenTest', JavaExec) {
+    description = 'Runs the world-generation parser checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.WorldgenTest'
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
     group = 'verification'
     dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest',
             'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest', 'scaleTest',
-            'tagTest', 'lootTableTest', 'iconTest', 'categoryTest', 'advancementTest'
+            'tagTest', 'lootTableTest', 'iconTest', 'categoryTest', 'advancementTest',
+            'worldgenTest'
 }

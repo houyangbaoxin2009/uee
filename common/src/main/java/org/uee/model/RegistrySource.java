@@ -124,6 +124,7 @@ public record RegistrySource(ElementKind kind, String registry, boolean dynamic,
             ElementKind.LOOT_TABLE,
             ElementKind.LANG,
             ElementKind.ADVANCEMENT,
+            ElementKind.WORLDGEN,
             // Assembled from the facts rather than from a registry: the mod list comes from the loader,
             // the environment from the process, the rest from the analyses.
             ElementKind.MOD,

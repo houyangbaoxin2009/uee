@@ -63,6 +63,9 @@ jobs:
       - name: Run the advancement parser test
         run: ./gradlew advancementTest
 
+      - name: Run the world-generation parser test
+        run: ./gradlew worldgenTest
+
   # Each loader builds separately because each needs its own patched game jar. `-x test` keeps the
   # core checks in the job above rather than repeating them four times.
   loaders:

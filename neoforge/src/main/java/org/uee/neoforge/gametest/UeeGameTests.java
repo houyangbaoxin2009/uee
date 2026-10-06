@@ -385,6 +385,39 @@ public final class UeeGameTests {
         helper.succeed();
     }
 
+    /**
+     * World generation is collected from the loaded datapacks.
+     *
+     * <p>The core test parses the shipped data when it can find a jar; this is the other half — the
+     * enumeration over a live resource manager, on the real path, with the hundreds of files the vanilla
+     * datapacks contribute. The two are different failures: a parser can be right while the sweep finds
+     * nothing, and a sweep can find everything while the parser drops it.
+     */
+    @GameTest(template = "empty", timeoutTicks = 600)
+    public static void worldgenIsCollectedFromDatapacks(GameTestHelper helper) {
+        LoaderAdapter adapter = Uee.adapter();
+        RecordingSink sink = new RecordingSink();
+        ExportConfig config = ExportConfig.builder().kinds(ElementKind.WORLDGEN).build();
+        adapter.collectDatapacks(config, EnumSet.of(ElementKind.WORLDGEN), sink);
+
+        helper.assertTrue(sink.generics.size() > 100,
+                "only " + sink.generics.size() + " world generation files were collected; the vanilla"
+                        + " datapacks contribute several hundred");
+        helper.assertTrue(sink.failures.isEmpty(),
+                "world generation collection reported failures, first: "
+                        + (sink.failures.isEmpty() ? "" : sink.failures.get(0)));
+
+        // The key carries the kind and the name, so two kinds with one name stay distinguishable.
+        boolean placedFeature = sink.generics.stream()
+                .anyMatch(g -> g.startsWith("worldgen:") && g.contains("placed_feature/"));
+        boolean noiseOrPool = sink.generics.stream()
+                .anyMatch(g -> g.startsWith("worldgen:") && g.contains("template_pool/"));
+        helper.assertTrue(placedFeature, "no placed features were collected");
+        helper.assertTrue(noiseOrPool, "no template pools were collected");
+
+        helper.succeed();
+    }
+
     /** The mod list contains this mod and the game itself, with dependencies parsed. */
     @GameTest(template = "empty", timeoutTicks = 200)
     public static void modListIsAvailable(GameTestHelper helper) {

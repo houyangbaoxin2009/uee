@@ -85,6 +85,15 @@ public enum ElementKind {
      * prerequisites is reading exactly this.
      */
     ADVANCEMENT("advancement", "advancements"),
+    /**
+     * World generation — the files under {@code data/<ns>/worldgen/}.
+     *
+     * <p>One category for fourteen kinds of file, because that is how a reader thinks about them; the
+     * file's own kind is carried on the record and in its key. Read as files rather than through the
+     * registries that load them, so it works on a dedicated server and without a game — see
+     * {@code WorldgenFile} for what that does and does not say.
+     */
+    WORLDGEN("worldgen", "worldgen"),
     /** Loaded mods (layer A). */
     MOD("mod", "mods"),
     /** Debug / environment information (layer A). */
