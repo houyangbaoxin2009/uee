@@ -270,6 +270,16 @@ fingerprints as "unchanged", and a collision is therefore a silently missing cha
 rather than the record because the writers stream into a buffer and records have no boundary. A second run
 over identical input writes nothing at all.
 
+★ **注册顺序**（`registrationOrderItems` / `registrationOrderBlocks`）：注册表按注册顺序发号 ⇒ 按命名空间分组
+即得「谁先注册」。★ **连续性实测而非假定**：一个模组分两次注册（或被他模组触发）会得到**两段**，
+只报最低/最高会把它们说成一段 ⇒ 同时报**条数**，条数与跨度不等就标注 `not contiguous`。
+★ 它**不声称**加载顺序：号只说明「何时注册」，延迟注册的模组会移动但不代表加载方式不同。
+
+★ **Registration order** is read from the numbers a registry assigns, grouped by namespace, which answers
+who went first rather than what the nine-thousandth item is numbered. **Contiguity is measured, not
+assumed**: a mod registering in two passes gets two blocks, and a lowest/highest pair would describe them as
+one. It does not claim load order, only when entries were registered.
+
 ★ **`worldgen` 是「包写了什么」而不是「游戏加载了什么」**：十四种文件共用一个类目，记录里带种类、类型
 与引用的 id。生物群系与结构另有注册表类目给出「加载后」的答案，两个答案都拿得到，谁也不靠猜。
 
