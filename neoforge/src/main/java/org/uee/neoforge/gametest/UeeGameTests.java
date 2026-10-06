@@ -418,6 +418,33 @@ public final class UeeGameTests {
         helper.succeed();
     }
 
+    /**
+     * Functions are collected from the loaded datapacks.
+     *
+     * <p>The core test runs the parser over real functions when it can find a pack; this is the other
+     * half — the sweep over a live resource manager, with the extension that is not {@code .json} and the
+     * one category whose files are text. Vanilla ships no functions of its own, so this asserts the
+     * absence rather than a count: the sweep must run without finding anything and without failing, which
+     * is itself the thing worth knowing on a vanilla-only instance.
+     */
+    @GameTest(template = "empty", timeoutTicks = 600)
+    public static void functionsAreCollectedFromDatapacks(GameTestHelper helper) {
+        LoaderAdapter adapter = Uee.adapter();
+        RecordingSink sink = new RecordingSink();
+        ExportConfig config = ExportConfig.builder().kinds(ElementKind.FUNCTION).build();
+        adapter.collectDatapacks(config, EnumSet.of(ElementKind.FUNCTION), sink);
+
+        helper.assertTrue(sink.failures.isEmpty(),
+                "function collection reported failures, first: "
+                        + (sink.failures.isEmpty() ? "" : sink.failures.get(0)));
+        // Whatever was found must be named as a function, not as something else.
+        boolean wellNamed = sink.generics.stream().allMatch(g -> g.startsWith("function:"));
+        helper.assertTrue(wellNamed,
+                "a collected record was not recorded under the function category");
+
+        helper.succeed();
+    }
+
     /** The mod list contains this mod and the game itself, with dependencies parsed. */
     @GameTest(template = "empty", timeoutTicks = 200)
     public static void modListIsAvailable(GameTestHelper helper) {

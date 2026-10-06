@@ -32,6 +32,7 @@ import org.uee.datapack.TagFile;
 import org.uee.datapack.WorldgenFile;
 import org.uee.util.OrderedWork;
 import org.uee.datapack.AdvancementFile;
+import org.uee.datapack.FunctionFile;
 import org.uee.datapack.LangFile;
 import org.uee.datapack.LootTableFile;
 import org.uee.datapack.FunctionFlow;
@@ -275,6 +276,9 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         }
         if (wanted.contains(ElementKind.WORLDGEN)) {
             collectWorldgen(config, sink);
+        }
+        if (wanted.contains(ElementKind.FUNCTION)) {
+            collectFunctions(config, sink);
         }
     }
 
@@ -972,6 +976,65 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
                         new String[] {"locale", file.locale(), "keys", Integer.toString(file.size())}));
             } catch (Throwable t) {
                 return List.of(new Prepared.Bad(ElementKind.LANG, id.toString(), t));
+            }
+        }, sink);
+    }
+
+    // ---------------------------------------------------------------- functions
+
+    /**
+     * Collects functions from {@code data/<ns>/function/<path>.mcfunction}.
+     *
+     * <h2>The one category that is not JSON</h2>
+     *
+     * <p>Both the extension and the filter differ, which is why this does not go through the JSON helper:
+     * the files are plain text and the suffix is {@code .mcfunction}. The rest of the shape is the familiar
+     * one — a directory listing, a sort, and the workers preparing records — so only the filter is new.
+     *
+     * <h2>Single winner</h2>
+     *
+     * <p>Read off the game rather than assumed, as with the other single-winner categories: functions load
+     * through {@code FileToIdConverter} with {@code listMatchingResources}, which collects into a map keyed
+     * by id. So a pack shipping the same function replaces the one below it rather than having its lines
+     * appended, which is what a reader might expect of a text file.
+     *
+     * <h2>Function tags are not a second category</h2>
+     *
+     * <p>A function tag lives at {@code tags/function/<path>.json} and is already collected by the tag
+     * category, whose type field says {@code function}. Recording it here as well would put one file in two
+     * categories and invite a consumer to count it twice.
+     */
+    private void collectFunctions(ExportConfig config, ElementSink sink) {
+        net.minecraft.server.packs.resources.ResourceManager manager = resources;
+        if (manager == null) {
+            return;
+        }
+        Map<ResourceLocation, net.minecraft.server.packs.resources.Resource> files;
+        try {
+            files = manager.listResources(FunctionFile.directory(),
+                    path -> path.getPath().endsWith(FunctionFile.extension()));
+        } catch (Throwable t) {
+            sink.failure(ElementKind.FUNCTION, FunctionFile.directory(), t);
+            return;
+        }
+
+        List<String> keys = new ArrayList<>(files.size());
+        for (ResourceLocation id : files.keySet()) {
+            if (FunctionFile.pathOf(id.getPath()) != null && config.acceptsNamespace(id.getNamespace())) {
+                keys.add(id.toString());
+            }
+        }
+        keys.sort(null);
+
+        collectPrepared(config, keys, key -> {
+            ResourceLocation id = ResourceLocation.parse(key);
+            try {
+                FunctionFile.Function function = FunctionFile.parse(readAll(files.get(id)));
+                return List.of(new Prepared.Generic(ElementKind.FUNCTION, id.getNamespace(),
+                        FunctionFile.pathOf(id.getPath()), null, null, function.functionArray(),
+                        FunctionFile.extraPairs(function)));
+            } catch (Throwable t) {
+                return List.of(new Prepared.Bad(ElementKind.FUNCTION, id.toString(), t));
             }
         }, sink);
     }

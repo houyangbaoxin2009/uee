@@ -94,6 +94,15 @@ public enum ElementKind {
      * {@code WorldgenFile} for what that does and does not say.
      */
     WORLDGEN("worldgen", "worldgen"),
+    /**
+     * Functions — {@code data/<ns>/function/<path>.mcfunction}.
+     *
+     * <p>The one category that is not JSON: a function is a text file of commands. What is recorded is the
+     * call graph — which functions and function tags it invokes — plus how many commands it runs, which is
+     * what a wiki page about a function is made of. See {@code FunctionFile} for the line rules, which are
+     * read off the game's own reader and are not guessable.
+     */
+    FUNCTION("function", "functions"),
     /** Loaded mods (layer A). */
     MOD("mod", "mods"),
     /** Debug / environment information (layer A). */

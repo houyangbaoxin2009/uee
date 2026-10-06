@@ -300,6 +300,22 @@ tasks.register('worldgenTest', JavaExec) {
     mainClass = 'org.uee.WorldgenTest'
 }
 
+/**
+ * Runs the function checks.
+ *
+ * <p>A function is a text file, so this is the category where the rules are least guessable: a trailing
+ * backslash continues a line, a leading hash is a comment, a leading dollar sign is a macro and a leading
+ * slash is a mistake the game refuses. Each is read off the game's own reader, and the parser is then run
+ * over every function in a real datapack when one is on the machine.
+ */
+tasks.register('mcfunctionTest', JavaExec) {
+    description = 'Runs the function-file parser checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.FunctionTest'
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
@@ -307,5 +323,5 @@ tasks.register('verifyAll') {
     dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest',
             'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest', 'scaleTest',
             'tagTest', 'lootTableTest', 'iconTest', 'categoryTest', 'advancementTest',
-            'worldgenTest'
+            'worldgenTest', 'mcfunctionTest'
 }
