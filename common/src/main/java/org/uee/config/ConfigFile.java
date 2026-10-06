@@ -755,17 +755,22 @@ public final class ConfigFile {
                 //
                 // 关于 functions 类目 / about the functions category:
                 //   记录 data/<命名空间>/function/<路径>.mcfunction —— **本工具唯一不是 JSON 的类目**。
-                //   记录的是**调用图**（调用了哪些函数与函数标签）+ 命令条数；命令本身不复制（几万行且原文件就在那）。
-                //   ★ 行规则读自原版解析器：行尾 `\` 续行（⇒ 行数≠命令数）、`#` 开头是注释、`$` 开头是宏
-                //   （不是命令）、`/` 开头是**错误**（原版会拒绝）。★ 宏算出的调用名无法静态解析，
-                //   记在 `dynamicRefs` 而不是丢掉——「没调用」与「调用了运行时算出来的东西」是两回事。
-                //   Records data/<namespace>/function/<path>.mcfunction -- the one category that is not JSON.
-                //   What is recorded is the call graph (which functions and function tags it invokes) plus how
-                //   many commands it runs; the commands are not copied. The line rules come from the game's own
-                //   reader: a trailing backslash continues a line, a leading '#' is a comment, a leading '$' is
-                //   a macro rather than a command, and a leading '/' is a mistake the game refuses. A call whose
-                //   target is computed by a macro is recorded under dynamicRefs rather than dropped, because
-                //   "calls nothing" and "calls something computed at run time" are different answers.
+                //   记录的是**调用图**（调用了哪些函数与函数标签）与命令条数；命令本身不复制（几万行，
+                //   且原文件就在那里）。
+                //   ★ 行规则读自原版解析器：行尾反斜杠续行（⇒ 行数不等于命令数）；井号开头是注释；
+                //   美元符开头是**宏**（不是命令）；斜杠开头是**错误**（原版会拒绝该文件）。
+                //   ★ 宏算出来的调用名无法静态解析，记在 dynamicRefs 而不是丢掉——「没调用」与
+                //   「调用了运行时才算出来的东西」是两个不同的答案。
+                //   Records data/<namespace>/function/<path>.mcfunction -- the one category that is not
+                //   JSON. What is recorded is the call graph (which functions and function tags it
+                //   invokes) together with how many commands it runs; the commands are not copied, since
+                //   they run to tens of thousands of lines and the file itself is right there.
+                //   The line rules come from the game's own reader: a trailing backslash continues a line
+                //   (so the number of commands is not the number of lines); a leading hash is a comment; a
+                //   leading dollar sign is a macro rather than a command; and a leading slash is a mistake
+                //   the game refuses the file for. A call whose target is computed by a macro is recorded
+                //   under dynamicRefs rather than dropped, because calling nothing and calling something
+                //   computed at run time are different answers.
                 //
                 // 关于 langs 类目 / about the langs category:
                 //   记录 assets/<命名空间>/lang/<语言>.json 的键值表（zh_cn 与 en_us 各一条记录）。
