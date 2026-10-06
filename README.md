@@ -202,7 +202,7 @@ and no more for the dominant purpose**:
 | 方面 / Aspect | 默认 / Default | 为什么 / Why |
 | --- | --- | --- |
 | 格式 / format | `json` | 通用可读，无需解释 / readable anywhere |
-| 资产 / assets | `assets = true` 时把 `assets/<ns>/` **全部文件原样拷贝**（贴图/模型/音效/语言），默认关，**仅客户端** |
+| 资产 / assets | `assets = true` 时按**声明种类**（9 类 + 根文件）原样拷贝 `assets/<ns>/`，默认关，**客户端** |
 
 | 类目 / categories | 21 个：mods items blocks entities recipes **tags** **loot_tables** **advancements** **worldgen** **functions** **langs** effects fluids enchantments creative_tabs sounds particles attributes biomes structures dimensions damage_types block_entity_types potions features recipe_types menus | 百科页要引用的注册表与分组全在里面，跑一次就够 / everything a wiki entry references |
 | 分析 / analysis | 开，**独立成包** | n 个数据包 + **1 个**分析包；数据那半可单独交给下游 / n data packages plus one analysis bundle |
@@ -252,6 +252,16 @@ forever. That makes them cheaper than records: an unchanged asset costs one read
 ★ **Assets and data are two sides of a resource manager** (a server's sees `data/`, a client's sees
 `assets/`), so they get two bindings. One binding would copy a server's datapack files into the assets
 tree, and nothing in a resource location says which side it came from.
+★★ **资产按「声明种类」扫描，不是「全部」**：资源 API **无法问「全部」**——空路径是非法路径，且
+**拒绝被 log 后吞掉**（返回空 map、不抛异常）⇒ 「问了全部」会得到**零结果却毫无错误**。
+⇒ 所问的种类**写在 `AssetSweep` 里**（**实测**原版客户端的 9 个一级目录），且**摘要会报出扫描基础**；
+**声明之外的目录不会被拷贝**，这是明确写出的限制。根文件（`sounds.json`）无前缀可达，**按名取**。
+
+★★ **The asset sweep names what it asks for, because nothing can ask for everything**: an empty path is an
+invalid path, and the rejection is logged and swallowed — so "ask for all of it" returns nothing and reports
+no error. The kinds it asks for are declared in `AssetSweep`, measured from the shipped client's nine
+directories, and the summary names that basis. A directory outside the list is not copied, which is a
+limitation stated rather than hidden. Root files have no prefix that reaches them and are fetched by name.
 
 ★ **Incremental export (off by default)**: with `delta = true`, only the shards whose content changed are
 written, unchanged ones are left alone and vanished ones are deleted, keyed on SHA-256 in a
