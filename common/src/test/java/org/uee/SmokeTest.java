@@ -2,6 +2,7 @@ package org.uee;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.Map;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
@@ -122,11 +123,110 @@ public final class SmokeTest {
             System.out.println(text.length() > 900 ? text.substring(0, 900) + "\n...[truncated]" : text);
         }
 
+        problems += deltaRuns(root, config, catalog);
+
         System.out.println();
         System.out.println(problems == 0 ? "STRUCTURE: OK" : "STRUCTURE: " + problems + " PROBLEM(S)");
         if (problems != 0) {
             System.exit(1);
         }
+    }
+
+    // ---------------------------------------------------------------- the delta, end to end
+
+    /**
+     * Runs the same export again with a delta asked for, and checks that it does nothing.
+     *
+     * <p>End to end on purpose. The delta decisions are checked in their own harness against synthetic
+     * files, and that cannot catch the mistakes that matter here: whether the pipeline gives the plan the
+     * path a consumer will actually read, whether the rename lands where the next run looks, and whether a
+     * run over identical input really does leave every byte alone. Those are properties of the wiring, and
+     * the only way to see them is to run the whole thing twice.
+     *
+     * @return the number of problems found
+     */
+    private static int deltaRuns(Path root, ExportConfig base, DatapackCatalog catalog)
+            throws IOException {
+        System.out.println();
+        System.out.println("== the delta, over the real pipeline ==");
+        int problems = 0;
+
+        Path snapshot = root.resolve(org.uee.delta.Snapshot.FILE_NAME);
+        ExportConfig deltaConfig = base.toBuilder().delta(true).build();
+
+        // The first incremental run has nothing to compare against, so it writes in full and leaves a
+        // manifest behind for the next one.
+        ExportReport first = new Exporter(new FakeAdapter(), deltaConfig, root,
+                AnalysisEngine.standard(), catalog).run();
+        System.out.println("  first delta run:  " + first.deltaSummary());
+        if (!Files.isRegularFile(snapshot)) {
+            System.out.println("  FAIL no snapshot was written, so the next run has nothing to compare");
+            problems++;
+        } else {
+            System.out.println("  a snapshot was left for the next run");
+        }
+
+        // The second run has identical input. Every artifact should be recognised and left alone.
+        long filesBefore = countFiles(root);
+        Map<String, Long> sizesBefore = sizesOf(root);
+        ExportReport second = new Exporter(new FakeAdapter(), deltaConfig, root,
+                AnalysisEngine.standard(), catalog).run();
+        String summary = second.deltaSummary();
+        System.out.println("  second delta run: " + summary);
+
+        if (summary == null || !summary.contains("nothing to do")) {
+            System.out.println("  FAIL a run over identical input did not report nothing to do");
+            problems++;
+        }
+        if (countFiles(root) != filesBefore) {
+            System.out.println("  FAIL the artifact count changed on a run that had nothing to write");
+            problems++;
+        }
+        if (!sizesOf(root).equals(sizesBefore)) {
+            System.out.println("  FAIL an artifact changed on a run that had nothing to write");
+            problems++;
+        }
+        // Whichever way the decision went, the temporaries must not survive it.
+        int parts = countPartFiles(root);
+        if (parts != 0) {
+            System.out.println("  FAIL " + parts + " temporary file(s) were left behind");
+            problems++;
+        } else {
+            System.out.println("  no temporary files were left behind");
+        }
+
+        System.out.println(problems == 0 ? "  delta: OK" : "  delta: " + problems + " problem(s)");
+        return problems;
+    }
+
+    private static long countFiles(Path root) {
+        try (var walk = Files.walk(root)) {
+            return walk.filter(Files::isRegularFile).count();
+        } catch (IOException e) {
+            return -1;
+        }
+    }
+
+    private static int countPartFiles(Path root) {
+        try (var walk = Files.walk(root)) {
+            return (int) walk.filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().endsWith(".part")).count();
+        } catch (IOException e) {
+            return -1;
+        }
+    }
+
+    /** Every file's size, so a rewrite that changed nothing is still visible as a change. */
+    private static Map<String, Long> sizesOf(Path root) {
+        Map<String, Long> out = new java.util.TreeMap<>();
+        try (var walk = Files.walk(root)) {
+            for (Path p : walk.filter(Files::isRegularFile).toList()) {
+                out.put(root.relativize(p).toString().replace('\\', '/'), Files.size(p));
+            }
+        } catch (IOException e) {
+            out.put("error", -1L);
+        }
+        return out;
     }
 
     // ---------------------------------------------------------------- structural validation

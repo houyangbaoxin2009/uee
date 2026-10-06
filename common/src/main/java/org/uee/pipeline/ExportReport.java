@@ -54,6 +54,15 @@ public final class ExportReport {
     private final int findings;
 
     /**
+     * What this run did relative to the previous one, or {@code null} when no delta was asked for.
+     *
+     * <p>On the report rather than on the runner, because that is where a caller looks: the runner is
+     * single-use and holding a reference to it just to ask what happened is the sort of thing that gets
+     * forgotten when the interface is used from a distance.
+     */
+    private final String delta;
+
+    /**
      * Builds a report.
      *
      * <p>Public because a report is a value and the job runner accepts one from a caller's own work:
@@ -67,17 +76,28 @@ public final class ExportReport {
         for (Artifact a : artifacts) {
             records += a.records();
         }
-        return new ExportReport(root, artifacts, failures, records, millis, findings);
+        return new ExportReport(root, artifacts, failures, records, millis, findings, null);
+    }
+
+    /** A report that also says what changed, for a run that was asked for a delta. */
+    public static ExportReport of(Path root, List<Artifact> artifacts, List<String> failures,
+            long millis, int findings, String deltaSummary) {
+        long records = 0;
+        for (Artifact a : artifacts) {
+            records += a.records();
+        }
+        return new ExportReport(root, artifacts, failures, records, millis, findings, deltaSummary);
     }
 
     ExportReport(Path root, List<Artifact> artifacts, List<String> failures, long records,
-            long millis, int findings) {
+            long millis, int findings, String delta) {
         this.root = root;
         this.artifacts = artifacts;
         this.failures = failures;
         this.records = records;
         this.millis = millis;
         this.findings = findings;
+        this.delta = delta;
         long total = 0;
         for (Artifact a : artifacts) {
             total += a.bytes();
@@ -87,6 +107,11 @@ public final class ExportReport {
 
     public Path root() {
         return root;
+    }
+
+    /** What changed relative to the previous run, or {@code null} when no delta was asked for. */
+    public String deltaSummary() {
+        return delta;
     }
 
     public List<Artifact> artifacts() {
@@ -125,6 +150,11 @@ public final class ExportReport {
                 .append(records).append(" records, ")
                 .append(bytes / 1024).append(" KiB in ")
                 .append(millis).append(" ms");
+        if (delta != null) {
+            // Appended rather than replacing the figures above: a delta run still produces files and
+            // still takes time, and a reader wants both the size of the run and the size of the change.
+            sb.append("; delta: ").append(delta);
+        }
         if (findings > 0) {
             sb.append(", ").append(findings).append(" findings");
         }

@@ -60,7 +60,7 @@ public final class ConfigFile {
     public static final String[] KNOWN_KEYS = {
             "output", "package", "formats", "kinds",
             "analyze", "analysis_separate", "package_per_kind", "quiet",
-            "fields", "exclude_fields", "dry_run", "include_tags", "exclude_tags",
+            "fields", "exclude_fields", "dry_run", "delta", "include_tags", "exclude_tags",
             "max_file_mb",
             "icons", "pretty", "incremental", "include_paths",
             "shard_by_namespace", "shard_size", "memory_limit_mb", "threads",
@@ -78,6 +78,9 @@ public final class ConfigFile {
     private final Boolean quiet;
     private final FieldMask fields;
     private final Boolean dryRun;
+
+    /** Whether the file says anything about the delta. Null means it does not, which is not "off". */
+    private final Boolean delta;
     private final Set<String> includeTags;
     private final Set<String> excludeTags;
     private final Integer maxFileMb;
@@ -120,6 +123,7 @@ public final class ConfigFile {
                 ? FieldMask.all()
                 : FieldMask.of(b.includeFields, b.excludeFields);
         this.dryRun = b.dryRun;
+        this.delta = b.delta;
         this.includeTags = b.includeTags;
         this.excludeTags = b.excludeTags;
         this.maxFileMb = b.maxFileMb;
@@ -220,6 +224,9 @@ public final class ConfigFile {
         }
         if (dryRun != null) {
             keys.add("dry_run");
+        }
+        if (delta != null) {
+            keys.add("delta");
         }
         if (includeTags != null) {
             keys.add("include_tags");
@@ -346,6 +353,9 @@ public final class ConfigFile {
         }
         if (dryRun != null) {
             b.dryRun(dryRun);
+        }
+        if (delta != null) {
+            b.delta(delta);
         }
         if (includeTags != null) {
             for (String tag : includeTags) {
@@ -502,6 +512,7 @@ public final class ConfigFile {
                 case "fields" -> b.includeFields = new LinkedHashSet<>(strings(value));
                 case "exclude_fields" -> b.excludeFields = new LinkedHashSet<>(strings(value));
                 case "dry_run" -> b.dryRun = value.asBool();
+                case "delta" -> b.delta = value.asBool();
                 case "include_tags" -> b.includeTags = new LinkedHashSet<>(strings(value));
                 case "exclude_tags" -> b.excludeTags = new LinkedHashSet<>(strings(value));
                 case "max_file_mb" -> b.maxFileMb = (int) value.asInt();
@@ -713,6 +724,18 @@ public final class ConfigFile {
                 include_tags = []
                 // 这些标签的元素跳过 / elements carrying these are skipped
                 exclude_tags = []
+
+                // 差量导出：只写相对上一份快照变化了的分片，未变的不重写、消失的被删除。
+                // 快照存放在输出目录下的 `.uee-snapshot`（指纹 = 分片内容的 SHA-256）。
+                // ★ 默认关：开启后未变的分片**不会被重写**，且每个分片会先写临时文件 ⇒ 没人要这个
+                // 功能时不该付这份代价。★ 按**分片**判变化，不按记录：写端是流式缓冲、记录之间没有边界。
+                // Incremental export: write only the shards that changed since the previous run, leave the
+                // unchanged ones alone and delete the ones that are gone. The snapshot lives in the output
+                // directory as `.uee-snapshot`, keyed on each shard's SHA-256. Off by default: with it on,
+                // unchanged shards are not rewritten and every shard is written through a temporary first,
+                // and nobody should pay that without asking. The unit is the shard rather than the record,
+                // because the writers stream into a buffer and records have no boundary on the way out.
+                delta = false
 
                 // 试运行：不写任何文件，但仍然给出真实的文件清单与记录数
                 // Dry run: write nothing, but report the real file set and record counts
@@ -943,6 +966,7 @@ public final class ConfigFile {
                 ? "[]" : list(config.fields().include()));
         v.put("exclude_fields", list(config.fields().exclude()));
         v.put("dry_run", Boolean.toString(config.dryRun()));
+        v.put("delta", Boolean.toString(config.delta()));
         v.put("include_tags", list(config.includeTags()));
         v.put("exclude_tags", list(config.excludeTags()));
         v.put("max_file_mb", Long.toString(config.maxFileBytes() / (1024 * 1024)));
@@ -1038,6 +1062,7 @@ public final class ConfigFile {
         private Set<String> includeFields;
         private Set<String> excludeFields;
         private Boolean dryRun;
+        private Boolean delta;
         private Set<String> includeTags;
         private Set<String> excludeTags;
         private Integer maxFileMb;
@@ -1149,6 +1174,11 @@ public final class ConfigFile {
 
         public Builder excludeFields(Set<String> names) {
             this.excludeFields = names;
+            return this;
+        }
+
+        public Builder delta(boolean on) {
+            this.delta = on;
             return this;
         }
 

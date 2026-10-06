@@ -2,6 +2,7 @@ package org.uee.pipeline;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -23,6 +24,8 @@ import org.uee.datapack.TargetDefinition;
 import org.uee.model.BlockElement;
 import org.uee.model.DebugSection;
 import org.uee.model.ElementKind;
+import org.uee.delta.Snapshot;
+import org.uee.delta.DeltaPlan;
 import org.uee.model.EntityElement;
 import org.uee.model.ItemElement;
 import org.uee.model.ModElement;
@@ -88,6 +91,20 @@ public final class Exporter implements ElementSink {
      */
     private final List<Shard> closedShards = new ArrayList<>();
     private final List<Failure> failures = new ArrayList<>();
+
+    /**
+     * What the previous run produced, and what this one should do about it.
+     *
+     * <p>Null when no delta was asked for, which is the default and keeps a plain run's behaviour exactly
+     * what it was: no temporary files, no hashing, no manifest.
+     */
+    private DeltaPlan delta;
+
+    /** The snapshot this run is being measured against, kept for the report's benefit. */
+    private Snapshot previousSnapshot;
+
+    /** How many stale artifacts this run removed, for the summary. */
+    private int deletedByDelta;
     /** Facts collection observed, for the analyses to read. */
     private final AnalysisContext context;
     private final AnalysisEngine engine;
@@ -161,6 +178,7 @@ public final class Exporter implements ElementSink {
     public ExportReport run() throws IOException {
         Set<ElementKind> kinds = config.kinds();
         long started = System.nanoTime();
+        beginDelta();
         try {
             if (kinds.contains(ElementKind.MOD)) {
                 collectMods();
@@ -186,8 +204,15 @@ public final class Exporter implements ElementSink {
         } finally {
             close();
         }
+        // Settled after every shard, and only on a run that reached the end: a run that threw has not
+        // produced the set it would be describing, and a manifest claiming otherwise would make the next
+        // run believe a state that was never reached.
+        deletedByDelta = endDelta();
         long millis = (System.nanoTime() - started) / 1_000_000L;
-        return new ExportReport(root, artifacts(), failureMessages(), totalRecords, millis, findings);
+        // The summary is built before the report so the report carries it; a caller that wants to know
+        // what changed reads it from there rather than from a runner it would have to hold on to.
+        String deltaText = deltaSummary();
+        return ExportReport.of(root, artifacts(), failureMessages(), millis, findings, deltaText);
     }
 
     /**
@@ -454,7 +479,7 @@ public final class Exporter implements ElementSink {
         // roll-over cannot produce a duplicate part number even if the map is touched elsewhere.
         parts.merge(logical, 1, Integer::sum);
         try {
-            shard.close();
+            finishShard(shard);
         } catch (IOException e) {
             failures.add(new Failure(shard.kind(), shard.namespace(), e));
         }
@@ -496,7 +521,10 @@ public final class Exporter implements ElementSink {
         }
         Writer writer = WriterFactory.create(format, config, pool);
         Shard created = new Shard(namespace, kind, format, target, dir, writer, pool,
-                watermarkBytes(), config.dryRun(), config.maxFileBytes(), part);
+                watermarkBytes(), config.dryRun(), config.maxFileBytes(), part,
+                // Asked for a delta: hash what is written and write through a temporary, so the decision
+                // at close can go either way. Off otherwise, so a plain run behaves exactly as before.
+                config.delta() && !config.dryRun());
         shards.put(key, created);
         return created;
     }
@@ -534,6 +562,111 @@ public final class Exporter implements ElementSink {
         }
     }
 
+    /**
+     * Reads the previous snapshot, if a delta was asked for.
+     *
+     * <p>Read before anything is collected rather than lazily, because every shard's decision depends on
+     * it and a manifest read half-way through would make the answer depend on which shard got there first.
+     */
+    private void beginDelta() throws IOException {
+        if (!config.delta() || config.dryRun()) {
+            return;
+        }
+        previousSnapshot = Snapshot.read(snapshotPath());
+        for (String complaint : previousSnapshot.complaints()) {
+            failures.add(new Failure(null, Snapshot.FILE_NAME, new IllegalStateException(complaint)));
+        }
+        delta = new DeltaPlan(previousSnapshot);
+    }
+
+    /**
+     * Where the snapshot lives.
+     *
+     * <p>Inside the output directory and named with a leading dot, so it travels with the artifacts it
+     * describes: a delta is only meaningful against the export it was taken from, and a consumer that
+     * copied the directory somewhere else should get the same answers.
+     */
+    private Path snapshotPath() {
+        return root.resolve(Snapshot.FILE_NAME);
+    }
+
+    /**
+     * Closes a shard and settles what to do with it.
+     *
+     * <p>One method for both the roll-over path and the final close, because the decision is the same in
+     * both cases and having it in two places is how a half-open part number gets a different verdict from
+     * the one before it.
+     *
+     * <p>The order matters: the file is closed first, so the fingerprint covers everything written; then
+     * the decision, which needs the fingerprint; then the rename or the discard. A shard that produced no
+     * bytes is not an artifact at all and is left alone entirely.
+     */
+    private void finishShard(Shard s) throws IOException {
+        s.close();
+        if (delta == null || !s.tracksFingerprint() || s.bytes() == 0) {
+            return;
+        }
+        String path = relativePath(s.file());
+        String fingerprint = s.fingerprint();
+        DeltaPlan.Verdict verdict = delta.record(path, fingerprint);
+        if (delta.shouldWrite(verdict, Files.isRegularFile(s.file()))) {
+            s.keep();
+        } else {
+            s.discard();
+        }
+    }
+
+    /**
+     * A shard's path relative to the output root, which is what the snapshot records.
+     *
+     * <p>Relative rather than absolute so a manifest is portable: an export copied to another machine, or
+     * produced under a different mount point, must still recognise its own artifacts. Separators are
+     * normalised to the forward slash the rest of the project uses, for the same reason.
+     */
+    private String relativePath(Path file) {
+        Path absolute = file.toAbsolutePath().normalize();
+        Path base = root.toAbsolutePath().normalize();
+        Path relative = absolute.startsWith(base) ? base.relativize(absolute) : absolute;
+        return relative.toString().replace('\\', '/');
+    }
+
+    /**
+     * Writes the new snapshot and removes what this run did not produce.
+     *
+     * <p>Called after every shard is settled, since a removal is by definition an artifact this run never
+     * reached. Deletions happen before the manifest is written: a run interrupted mid-way leaves a manifest
+     * describing the previous state and some files already gone, and the next run computes the removal
+     * again rather than believing a state that does not exist.
+     *
+     * @return how many files were actually deleted
+     */
+    private int endDelta() throws IOException {
+        if (delta == null || config.dryRun()) {
+            return 0;
+        }
+        DeltaPlan.Report report = delta.finish(0);
+        int deleted = 0;
+        for (String path : report.removed()) {
+            Path doomed = root.resolve(path);
+            try {
+                if (Files.deleteIfExists(doomed)) {
+                    deleted++;
+                }
+            } catch (IOException e) {
+                // Reported rather than fatal: failing to remove a stale artifact is a smaller problem
+                // than abandoning a run that has already produced everything else.
+                failures.add(new Failure(null, path, e));
+            }
+        }
+        Snapshot.write(snapshotPath(), report.current(), describeRun());
+        return deleted;
+    }
+
+    /** A line in the manifest's header block, so a person opening it knows what produced it. */
+    private String describeRun() {
+        return "written by a run of " + config.kinds().size() + " categories";
+    }
+
     private void close() throws IOException {
         if (closed) {
             return;
@@ -542,7 +675,7 @@ public final class Exporter implements ElementSink {
         IOException first = null;
         for (Shard s : shards.values()) {
             try {
-                s.close();
+                finishShard(s);
             } catch (IOException e) {
                 if (first == null) {
                     first = e;
@@ -552,6 +685,27 @@ public final class Exporter implements ElementSink {
         if (first != null) {
             throw first;
         }
+    }
+
+    /**
+     * What this run did relative to the previous one, or {@code null} when no delta was asked for.
+     *
+     * <p>Exposed rather than folded into the report record, because the report is about artifacts and
+     * failures and this is about the relationship between two runs. A caller that wants to tell the user
+     * "eleven files changed" needs it; one that does not can ignore it.
+     */
+    private String deltaSummary() {
+        if (delta == null) {
+            return null;
+        }
+        DeltaPlan.Report report = delta.finish(deletedByDelta);
+        String summary = report.summary(previousSnapshot);
+        if (report.consumerWorkload(previousSnapshot) == 0) {
+            // The headline case, said plainly: an incremental run that found nothing to do is a success
+            // and should read like one rather than like a run that produced nothing.
+            return summary + " (nothing to do)";
+        }
+        return summary;
     }
 
     /** One element that could not be collected. */

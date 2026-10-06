@@ -316,6 +316,23 @@ tasks.register('mcfunctionTest', JavaExec) {
     mainClass = 'org.uee.FunctionTest'
 }
 
+/**
+ * Runs the delta checks: fingerprints, the snapshot manifest, and the decisions taken against it.
+ *
+ * <p>The fingerprints are checked against the published SHA-256 vectors rather than against each other,
+ * for the same reason the png encoder is checked with a decoder: two runs of the same code agree with
+ * themselves even when the algorithm is wrong, and a fingerprint that is wrong is a change that goes
+ * unreported.
+ */
+tasks.register('deltaTest', JavaExec) {
+    description = 'Runs the delta, fingerprint and snapshot checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.DeltaTest'
+    args = [layout.buildDirectory.dir('delta-test').get().asFile.absolutePath]
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
@@ -323,5 +340,5 @@ tasks.register('verifyAll') {
     dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest',
             'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest', 'scaleTest',
             'tagTest', 'lootTableTest', 'iconTest', 'categoryTest', 'advancementTest',
-            'worldgenTest', 'mcfunctionTest'
+            'worldgenTest', 'mcfunctionTest', 'deltaTest'
 }

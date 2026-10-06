@@ -267,8 +267,13 @@ public final class CategoryTest {
         check("an empty name yields nothing", LangFile.localeOf("lang/.json") == null);
         check("and neither does null", LangFile.localeOf(null) == null);
         check("the directory is named once", LangFile.directory().equals("lang"));
-        check("two locales are collected",
-                LangFile.LOCALES.equals(List.of("zh_cn", "en_us")));
+        // Not a list of locales: collection takes every locale the resource manager has, because a
+        // client ships a hundred of them and the design asks for all of them. What the two locales mean
+        // belongs to the translator, which says so itself, and a constant here listing them would be a
+        // second copy of that answer -- and looked like a filter it never was.
+        check("a locale is taken from the path, whatever it is",
+                "de_de".equals(LangFile.localeOf("lang/de_de.json"))
+                        && "ja_jp".equals(LangFile.localeOf("lang/ja_jp.json")));
     }
 
     // ---------------------------------------------------------------- harness

@@ -71,6 +71,16 @@ public final class ExportConfig {
     private final boolean quiet;
     private final FieldMask fields;
     private final boolean dryRun;
+
+    /**
+     * Whether to write only what changed since the previous run.
+     *
+     * <p>Off by default, and deliberately: a delta changes what lands on disk — an unchanged artifact is
+     * left exactly as it was rather than rewritten — so a run that did not ask for one must behave exactly
+     * as it did before the option existed. It also writes a temporary file per artifact while it works,
+     * which is a cost nobody should pay without asking for the feature that needs it.
+     */
+    private final boolean delta;
     private final Set<String> includeTags;
     private final Set<String> excludeTags;
     private final long maxFileBytes;
@@ -105,6 +115,7 @@ public final class ExportConfig {
         this.quiet = b.quiet;
         this.fields = b.fields;
         this.dryRun = b.dryRun;
+        this.delta = b.delta;
         this.includeTags = Collections.unmodifiableSet(new LinkedHashSet<>(b.includeTags));
         this.excludeTags = Collections.unmodifiableSet(new LinkedHashSet<>(b.excludeTags));
         this.maxFileBytes = b.maxFileBytes;
@@ -252,6 +263,11 @@ public final class ExportConfig {
      */
     public boolean dryRun() {
         return dryRun;
+    }
+
+    /** Whether to write only what changed since the previous run. */
+    public boolean delta() {
+        return delta;
     }
 
     /** Only elements carrying one of these tags. Empty means no tag restriction. */
@@ -419,6 +435,10 @@ public final class ExportConfig {
         b.quiet = quiet;
         b.fields = fields;
         b.dryRun = dryRun;
+        // Easy to forget and invisible when forgotten: a toBuilder round trip that dropped this would
+        // silently turn a delta run into a full one, which looks like the feature not working rather
+        // than like a copied field being missing.
+        b.delta = delta;
         b.includeTags = new LinkedHashSet<>(includeTags);
         b.excludeTags = new LinkedHashSet<>(excludeTags);
         b.maxFileBytes = maxFileBytes;
@@ -492,6 +512,7 @@ public final class ExportConfig {
         private boolean quiet = false;
         private FieldMask fields = FieldMask.all();
         private boolean dryRun = false;
+        private boolean delta = false;
         private Set<String> includeTags = new LinkedHashSet<>();
         private Set<String> excludeTags = new LinkedHashSet<>();
         private long maxFileBytes = 0;
@@ -608,6 +629,12 @@ public final class ExportConfig {
 
         public Builder fields(FieldMask mask) {
             this.fields = mask == null ? FieldMask.all() : mask;
+            return this;
+        }
+
+        /** Asks for a delta against the snapshot in the output directory, if there is one. */
+        public Builder delta(boolean on) {
+            this.delta = on;
             return this;
         }
 

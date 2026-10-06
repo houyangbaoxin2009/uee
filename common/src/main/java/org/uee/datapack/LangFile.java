@@ -32,16 +32,6 @@ import org.uee.util.JsonReader;
  */
 public final class LangFile {
 
-    /**
-     * The locales this project collects.
-     *
-     * <p>Both are collected rather than one because the point is a bilingual artifact: every other record
-     * carries a translated pair, and a consumer that had to join two exports to get the other half would
-     * be doing work this can do once. Two is also what the existing translator already loads, so the
-     * resources are being read anyway.
-     */
-    public static final List<String> LOCALES = List.of("zh_cn", "en_us");
-
     private final String locale;
     private final Map<String, String> entries;
 
