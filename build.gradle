@@ -349,6 +349,22 @@ tasks.register('assetTest', JavaExec) {
     args = [layout.buildDirectory.dir('asset-test').get().asFile.absolutePath]
 }
 
+/**
+ * Runs the class loader chain checks.
+ *
+ * <p>Checked against the JDK's own chain and against loaders composed for the purpose, rather than against
+ * a hand-written stand-in: a stand-in would test itself. The traversal takes its parent lookup as a
+ * parameter so that a cycle -- which cannot be built from real loaders, since a parent is fixed at
+ * construction -- can still be exercised, since the guard against one would otherwise be code nobody runs.
+ */
+tasks.register('classLoaderTest', JavaExec) {
+    description = 'Runs the class loader chain checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.ClassLoaderTest'
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
@@ -356,5 +372,5 @@ tasks.register('verifyAll') {
     dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest',
             'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest', 'scaleTest',
             'tagTest', 'lootTableTest', 'iconTest', 'categoryTest', 'advancementTest',
-            'worldgenTest', 'mcfunctionTest', 'deltaTest', 'assetTest'
+            'worldgenTest', 'mcfunctionTest', 'deltaTest', 'assetTest', 'classLoaderTest'
 }

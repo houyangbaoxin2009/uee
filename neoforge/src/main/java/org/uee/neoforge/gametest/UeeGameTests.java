@@ -481,6 +481,43 @@ public final class UeeGameTests {
         helper.succeed();
     }
 
+    /**
+     * The class loader chain is reported, and it is a chain.
+     *
+     * <p>Checked here rather than in the core because the starting points are the game's: a run inside the
+     * game has a loader for the game's classes and one for this program's, and whether they are the same
+     * loader is exactly the fact the section exists to report. The core test covers the walk; this covers
+     * the supply of starting points, which is where a mistake would leave the section present and empty.
+     */
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void classLoaderChainIsReported(GameTestHelper helper) {
+        LoaderAdapter adapter = Uee.adapter();
+        DebugSection chain = null;
+        for (DebugSection section : adapter.debugSections()) {
+            if (section.name().equals("classLoaders")) {
+                chain = section;
+            }
+        }
+        helper.assertTrue(chain != null, "no class loader section was produced");
+        // Read through the keys and values rather than a rendered form: this is a record holding two arrays,
+        // so its own toString prints identities and an assertion against it would fail whatever the content.
+        String rendered = describe(chain);
+        helper.assertTrue(has(chain, "startingPoints"),
+                "the section does not report how many starting points it used: " + rendered);
+        helper.assertTrue(rendered.contains("bootstrap"),
+                "the chain does not reach the bootstrap loader, so it is not a whole chain: " + rendered);
+        // The game's own loader must have been one of them: a section reporting only this program's chain
+        // would be a chain, and not the interesting one.
+        helper.assertTrue(rendered.contains("game"),
+                "the section does not include the game's own class loader: " + rendered);
+        // Two starting points at least, since the game and this program are both running.
+        helper.assertTrue(Integer.parseInt(value(chain, "startingPoints")) >= 2,
+                "fewer than two starting points were used, so the game's loader was not among them: "
+                        + rendered);
+
+        helper.succeed();
+    }
+
     /** The mod list contains this mod and the game itself, with dependencies parsed. */
     @GameTest(template = "empty", timeoutTicks = 200)
     public static void modListIsAvailable(GameTestHelper helper) {
@@ -617,6 +654,35 @@ public final class UeeGameTests {
     }
 
     /** A sink that keeps everything, so assertions can be made after collection finishes. */
+    /** A section's keys and values as one readable string, for an assertion message. */
+    private static String describe(DebugSection section) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < section.keys().length; i++) {
+            sb.append(section.keys()[i]).append('=').append(section.values()[i]).append("; ");
+        }
+        return sb.toString();
+    }
+
+    /** Whether a section has a key. */
+    private static boolean has(DebugSection section, String key) {
+        for (String k : section.keys()) {
+            if (k.equals(key)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** A section's value for a key, or an empty string. */
+    private static String value(DebugSection section, String key) {
+        for (int i = 0; i < section.keys().length; i++) {
+            if (section.keys()[i].equals(key)) {
+                return section.values()[i];
+            }
+        }
+        return "";
+    }
+
     private static final class RecordingSink implements ElementSink {
         final List<ItemElement> items = new ArrayList<>();
         final List<BlockElement> blocks = new ArrayList<>();

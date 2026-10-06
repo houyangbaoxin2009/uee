@@ -31,6 +31,7 @@ import org.uee.config.ExportConfig;
 import org.uee.datapack.TagFile;
 import org.uee.datapack.WorldgenFile;
 import org.uee.util.OrderedWork;
+import org.uee.analysis.ClassLoaderChain;
 import org.uee.asset.AssetPath;
 import org.uee.datapack.AdvancementFile;
 import org.uee.datapack.FunctionFile;
@@ -316,7 +317,66 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
                 "attribute", String.valueOf(sizeOf(ElementKind.ATTRIBUTE))));
         sections.add(DebugSection.of("mods",
                 "count", String.valueOf(loadedMods().size())));
+        sections.add(classLoaderSection());
         return sections;
+    }
+
+    /**
+     * The class loader chain, as a debug section.
+     *
+     * <h2>Which starting points, and why these</h2>
+     *
+     * <p>Three, all of them obtainable without touching a loader's API and none of them Minecraft's:
+     * the loader that defined this program's classes, the loader the game's own classes came from, and the
+     * thread's context loader — which is the one a loader usually installs so that code it calls can find
+     * the mods.
+     *
+     * <p>The interesting result is how many <em>distinct</em> loaders those three landed on. Three on one
+     * loader means everything in play shares a namespace and can see each other; three on three means the
+     * boundaries are real and are why a class can exist and not be found.
+     *
+     * <h2>What is not reported</h2>
+     *
+     * <p>Which loader serves which mod. The loaders' public APIs do not expose it — NeoForge's and Fabric's
+     * {@code ModContainer} both stop short of the loader that defined the mod's classes — so it is left out
+     * rather than inferred. A per-mod mapping that was guessed would look like the answer to the question
+     * this section exists for, which is worse than the section answering a smaller question honestly.
+     */
+    private DebugSection classLoaderSection() {
+        Map<String, ClassLoader> starting = new java.util.LinkedHashMap<>(3);
+        starting.put("uee", getClass().getClassLoader());
+        ClassLoader game = gameClassLoader();
+        if (game != null) {
+            starting.put("game", game);
+        }
+        ClassLoader context = Thread.currentThread().getContextClassLoader();
+        if (context != null) {
+            starting.put("context", context);
+        }
+
+        Map<String, String> pairs = ClassLoaderChain.from(starting).asPairs();
+        String[] flat = new String[pairs.size() * 2];
+        int i = 0;
+        for (Map.Entry<String, String> entry : pairs.entrySet()) {
+            flat[i++] = entry.getKey();
+            flat[i++] = entry.getValue();
+        }
+        return DebugSection.of("classLoaders", flat);
+    }
+
+    /**
+     * The loader the game's own classes came from, or {@code null} when there is no game on the class path.
+     *
+     * <p>Asked of a class the game always has, and its loader is the fact rather than any of the class's
+     * own behaviour. A headless run that has not loaded the game gets null and reports the chain it can
+     * see, which is the honest answer rather than an empty section.
+     */
+    protected ClassLoader gameClassLoader() {
+        try {
+            return net.minecraft.server.MinecraftServer.class.getClassLoader();
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     // ---------------------------------------------------------------- item collection
