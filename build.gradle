@@ -269,11 +269,26 @@ tasks.register('categoryTest', JavaExec) {
     mainClass = 'org.uee.CategoryTest'
 }
 
+/**
+ * Runs the advancement checks.
+ *
+ * <p>Nine records in ten have no display block, which is the fact the parser is shaped around and the
+ * fact a plausible implementation gets wrong in one of two directions: dropping them, or reporting them
+ * as damaged.
+ */
+tasks.register('advancementTest', JavaExec) {
+    description = 'Runs the advancement parser checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.AdvancementTest'
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
     group = 'verification'
     dependsOn 'verifyCore', 'compileVendored', 'smokeTest', 'configTest', 'analysisTest',
             'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest', 'scaleTest',
-            'tagTest', 'lootTableTest', 'iconTest', 'categoryTest'
+            'tagTest', 'lootTableTest', 'iconTest', 'categoryTest', 'advancementTest'
 }

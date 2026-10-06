@@ -30,6 +30,7 @@ import net.minecraft.world.level.block.Block;
 import org.uee.config.ExportConfig;
 import org.uee.datapack.TagFile;
 import org.uee.util.OrderedWork;
+import org.uee.datapack.AdvancementFile;
 import org.uee.datapack.LangFile;
 import org.uee.datapack.LootTableFile;
 import org.uee.datapack.FunctionFlow;
@@ -267,6 +268,9 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         }
         if (wanted.contains(ElementKind.LANG)) {
             collectLangs(config, sink);
+        }
+        if (wanted.contains(ElementKind.ADVANCEMENT)) {
+            collectAdvancements(config, sink);
         }
     }
 
@@ -964,6 +968,61 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
                         new String[] {"locale", file.locale(), "keys", Integer.toString(file.size())}));
             } catch (Throwable t) {
                 return List.of(new Prepared.Bad(ElementKind.LANG, id.toString(), t));
+            }
+        }, sink);
+    }
+
+    // ---------------------------------------------------------------- advancements
+
+    /**
+     * Collects advancements from {@code data/<ns>/advancement/<path>.json}.
+     *
+     * <h2>Single winner, like a loot table</h2>
+     *
+     * <p>Read off the game rather than assumed: they load through the same
+     * {@code SimpleJsonResourceReloadListener.scanDirectory} call the loot tables use, which collects into a
+     * map keyed by id, so a pack shipping the same id replaces the one below it. Merging stacks as tags do
+     * would invent a tree no pack declared.
+     *
+     * <h2>Most of them have nothing to show</h2>
+     *
+     * <p>About a tenth of the vanilla advancements carry a display block; the rest are the invisible
+     * recipe-unlock nodes, one per recipe. So the record does not treat a missing display as a defect and
+     * does not omit the record either — its parent and its triggers are still the tree.
+     */
+    private void collectAdvancements(ExportConfig config, ElementSink sink) {
+        net.minecraft.server.packs.resources.ResourceManager manager = resources;
+        if (manager == null) {
+            return;
+        }
+        Map<ResourceLocation, net.minecraft.server.packs.resources.Resource> files;
+        try {
+            files = manager.listResources(AdvancementFile.directory(),
+                    path -> path.getPath().endsWith(".json"));
+        } catch (Throwable t) {
+            sink.failure(ElementKind.ADVANCEMENT, AdvancementFile.directory(), t);
+            return;
+        }
+
+        List<String> keys = new ArrayList<>(files.size());
+        for (ResourceLocation id : files.keySet()) {
+            if (AdvancementFile.pathOf(id.getPath()) != null && config.acceptsNamespace(id.getNamespace())) {
+                keys.add(id.toString());
+            }
+        }
+        keys.sort(null);
+
+        collectPrepared(config, keys, key -> {
+            ResourceLocation id = ResourceLocation.parse(key);
+            try {
+                AdvancementFile.Advancement advancement =
+                        AdvancementFile.parse(readAll(files.get(id)));
+                return List.of(new Prepared.Generic(ElementKind.ADVANCEMENT, id.getNamespace(),
+                        AdvancementFile.pathOf(id.getPath()), advancement.titleOrKey(),
+                        advancement.descriptionOrKey(), advancement.triggerArray(),
+                        AdvancementFile.extraPairs(advancement)));
+            } catch (Throwable t) {
+                return List.of(new Prepared.Bad(ElementKind.ADVANCEMENT, id.toString(), t));
             }
         }, sink);
     }

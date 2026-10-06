@@ -64,13 +64,13 @@ public final class CategoryTest {
 
         // The default set is the one that hurts most when it is wrong: it is what a user gets without
         // asking for anything, so a gap here is invisible by construction.
-        List<ElementKind> covered = new ArrayList<>();
-        for (RegistrySource source : RegistrySource.all()) {
-            covered.add(source.kind());
-        }
         List<ElementKind> holes = new ArrayList<>();
         for (ElementKind kind : Tokens.kinds(Tokens.COMMON)) {
-            if (!covered.contains(kind) && !isDedicated(kind)) {
+            // Asked of the production table rather than of a list kept here. Keeping one here was the
+            // first version, and it immediately reported a freshly added category as uncollected --
+            // because the check had its own copy of the answer, which is the very duplication the check
+            // exists to catch.
+            if (!RegistrySource.isAccountedFor(kind)) {
                 holes.add(kind);
             }
         }
@@ -136,14 +136,6 @@ public final class CategoryTest {
         check("and resolves a known kind",
                 byKind.containsKey(ElementKind.ENCHANTMENT)
                         && byKind.get(ElementKind.ENCHANTMENT).dynamic());
-    }
-
-    private static boolean isDedicated(ElementKind kind) {
-        return switch (kind) {
-            case MOD, DEBUG, NAMESPACE, DEPENDENCY, CONFLICT, MIXIN, ITEM, BLOCK, ENTITY, RECIPE, TAG,
-                    LOOT_TABLE, LANG -> true;
-            default -> false;
-        };
     }
 
     /** A resource-location shape check that does not need Minecraft on the classpath. */

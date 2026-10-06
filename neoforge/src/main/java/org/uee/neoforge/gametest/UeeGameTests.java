@@ -363,7 +363,8 @@ public final class UeeGameTests {
         Set<ElementKind> wanted = EnumSet.of(ElementKind.ENCHANTMENT, ElementKind.CREATIVE_TAB,
                 ElementKind.SOUND, ElementKind.ATTRIBUTE, ElementKind.BIOME, ElementKind.DAMAGE_TYPE,
                 ElementKind.STRUCTURE, ElementKind.DIMENSION, ElementKind.PARTICLE,
-                ElementKind.EFFECT, ElementKind.FLUID);
+                ElementKind.EFFECT, ElementKind.FLUID, ElementKind.BLOCK_ENTITY_TYPE,
+                ElementKind.POTION, ElementKind.FEATURE, ElementKind.RECIPE_TYPE, ElementKind.MENU);
         RecordingSink sink = new RecordingSink();
         adapter.collectRegistries(
                 ExportConfig.builder().kinds(wanted.toArray(new ElementKind[0])).build(), wanted, sink);

@@ -60,6 +60,9 @@ jobs:
       - name: Check that every declared category has a collector
         run: ./gradlew categoryTest
 
+      - name: Run the advancement parser test
+        run: ./gradlew advancementTest
+
   # Each loader builds separately because each needs its own patched game jar. `-x test` keeps the
   # core checks in the job above rather than repeating them four times.
   loaders:

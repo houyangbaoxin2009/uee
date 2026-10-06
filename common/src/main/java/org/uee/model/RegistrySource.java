@@ -86,6 +86,13 @@ public record RegistrySource(ElementKind kind, String registry, boolean dynamic,
                     Names.FROM_ENTRY, null),
             new RegistrySource(ElementKind.SOUND, "minecraft:sound_event", false, Names.NONE, null),
             new RegistrySource(ElementKind.PARTICLE, "minecraft:particle_type", false, Names.NONE, null),
+            // These four were in the design's collection surface and had no entry here, so like the nine
+            // before them they produced nothing.
+            new RegistrySource(ElementKind.BLOCK_ENTITY_TYPE, "minecraft:block_entity_type", false,
+                    Names.NONE, null),
+            new RegistrySource(ElementKind.POTION, "minecraft:potion", false, Names.NONE, null),
+            new RegistrySource(ElementKind.RECIPE_TYPE, "minecraft:recipe_type", false, Names.NONE, null),
+            new RegistrySource(ElementKind.MENU, "minecraft:menu", false, Names.NONE, null),
 
             // --- loaded from data, so only while a server is running ---
             //
@@ -97,7 +104,8 @@ public record RegistrySource(ElementKind kind, String registry, boolean dynamic,
             new RegistrySource(ElementKind.BIOME, "minecraft:worldgen/biome", true, Names.LANG_KEY, "biome"),
             new RegistrySource(ElementKind.DAMAGE_TYPE, "minecraft:damage_type", true, Names.NONE, null),
             new RegistrySource(ElementKind.STRUCTURE, "minecraft:worldgen/structure", true, Names.NONE, null),
-            new RegistrySource(ElementKind.DIMENSION, "minecraft:dimension_type", true, Names.NONE, null));
+            new RegistrySource(ElementKind.DIMENSION, "minecraft:dimension_type", true, Names.NONE, null),
+            new RegistrySource(ElementKind.FEATURE, "minecraft:worldgen/feature", true, Names.NONE, null));
 
     /**
      * Categories that are collected by dedicated code rather than by walking a registry.
@@ -115,6 +123,7 @@ public record RegistrySource(ElementKind kind, String registry, boolean dynamic,
             ElementKind.TAG,
             ElementKind.LOOT_TABLE,
             ElementKind.LANG,
+            ElementKind.ADVANCEMENT,
             // Assembled from the facts rather than from a registry: the mod list comes from the loader,
             // the environment from the process, the rest from the analyses.
             ElementKind.MOD,
@@ -160,6 +169,41 @@ public record RegistrySource(ElementKind kind, String registry, boolean dynamic,
             }
         }
         return missing;
+    }
+
+    /**
+     * Whether anything collects this category.
+     *
+     * <p>Exposed because the alternative is what this class exists to remove: a caller keeping its own
+     * list of the categories that are handled elsewhere, which is a second copy of the same decision and
+     * drifts from this one. It already had: a check that asked its own copy reported a freshly added
+     * category as having no collector, which is the right answer to the wrong question.
+     */
+    public static boolean isAccountedFor(ElementKind kind) {
+        if (kind == null) {
+            return false;
+        }
+        for (RegistrySource source : ALL) {
+            if (source.kind() == kind) {
+                return true;
+            }
+        }
+        return COLLECTED_ELSEWHERE.contains(kind);
+    }
+
+    /**
+     * Whether a registry backs this category, as opposed to something collecting it by hand.
+     *
+     * <p>The distinction matters to the completeness check: a registry-backed category that resolves to
+     * nothing is a defect, while a hand-written collector needs no registry at all.
+     */
+    public static boolean isRegistryBacked(ElementKind kind) {
+        for (RegistrySource source : ALL) {
+            if (source.kind() == kind) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The sources by kind, for a caller that wants to look one up. */

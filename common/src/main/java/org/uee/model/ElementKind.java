@@ -64,6 +64,27 @@ public enum ElementKind {
     ATTRIBUTE("attribute", "attributes"),
     /** Creative tabs. */
     CREATIVE_TAB("creative_tab", "creative_tabs"),
+    /**
+     * The type of a block's entity, not the block entity itself — an instance lives in a world and there
+     * are as many as there are placed blocks, while the type is a registered kind.
+     */
+    BLOCK_ENTITY_TYPE("block_entity_type", "block_entity_types"),
+    /** A potion: the effect set a bottle carries. */
+    POTION("potion", "potions"),
+    /** A world-gen feature kind, as opposed to a configured or placed feature. */
+    FEATURE("feature", "features"),
+    /** A recipe kind — what the recipe's type field selects. */
+    RECIPE_TYPE("recipe_type", "recipe_types"),
+    /** A menu kind — the container screen a block or item opens. */
+    MENU("menu", "menus"),
+    /**
+     * Advancements — the achievement tree.
+     *
+     * <p>Declared in data rather than registered, like tags and loot tables. The parent link is the point
+     * of it: an advancement is a statement about what must be done first, and a wiki page that lists
+     * prerequisites is reading exactly this.
+     */
+    ADVANCEMENT("advancement", "advancements"),
     /** Loaded mods (layer A). */
     MOD("mod", "mods"),
     /** Debug / environment information (layer A). */

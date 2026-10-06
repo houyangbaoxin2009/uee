@@ -68,6 +68,9 @@ public final class Tokens {
             // cites when it says "this item is a gem". A member of the dominant purpose, so it is in.
             ElementKind.TAG,
             ElementKind.LOOT_TABLE,
+            // Advancements state what a player must do and in what order, which is a whole class of wiki
+            // page the other categories do not serve.
+            ElementKind.ADVANCEMENT,
             ElementKind.EFFECT,
             ElementKind.FLUID,
             ElementKind.ENCHANTMENT,
