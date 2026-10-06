@@ -734,6 +734,33 @@ public final class ConfigFile {
                 //   Records the item ids a table produces, plus the tags and other tables it references
                 //   (referenced, not expanded). Unlike a tag, a table is single-winner: a pack shipping
                 //   the same id replaces the one below rather than adding to it.
+                //
+                // 关于 advancements 类目 / about the advancements category:
+                //   记录 data/<命名空间>/advancement/<路径>.json 的父节点（前置）、触发条件与显示信息。
+                //   ★ 原版 1400 个进度里只有约一成带 display，其余是技术性节点 ⇒ 没有 display 是常态，
+                //   既不丢弃该记录、也不当失败。
+                //   Records the parent (the prerequisite), the triggers and the display fields. Only about
+                //   a tenth of the shipped advancements carry a display; the rest are invisible by design,
+                //   so a missing display is normal rather than damaged and such a record is kept.
+                //
+                // 关于 worldgen 类目 / about the worldgen category:
+                //   记录 data/<命名空间>/worldgen/<种类>/<名字>.json —— 十四种文件共用一个类目，记录里带
+                //   种类、类型与它引用的 id。按「包写了什么」采集，不是「游戏加载了什么」 ⇒ 专用服务器上
+                //   同样有效。不在默认集：体量大、对百科价值低，且生物群系与结构另有注册表类目给出后者。
+                //   Records data/<namespace>/worldgen/<kind>/<name>.json -- fourteen kinds of file behind
+                //   one category, each record carrying its kind, its type and the ids it references. Read
+                //   as what the pack wrote rather than what the game loaded, so it works on a dedicated
+                //   server too. Not in the default set: it is large, of little use to a wiki, and biomes
+                //   and structures have registry categories that give the loaded answer.
+                //
+                // 关于 langs 类目 / about the langs category:
+                //   记录 assets/<命名空间>/lang/<语言>.json 的键值表（zh_cn 与 en_us 各一条记录）。
+                //   ★ 语言文件在 assets/ 下，专用服务器的资源管理器看不到它 ⇒ 该类别只在客户端有效，
+                //   服务器上会明确报告而不是静默为空。
+                //   Records the key/value tables under assets/<namespace>/lang/ (one record per locale,
+                //   zh_cn and en_us). Language files live under assets/, which a dedicated server's
+                //   resource manager cannot see, so this works on a client and reports rather than going
+                //   quiet on a server.
 
                 // ─── 采集 / collection ─────────────────────────────────────────────
                 icons = false                   // 图标渲染，较慢 / render icons, slow
