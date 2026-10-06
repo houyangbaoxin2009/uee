@@ -975,6 +975,41 @@ public final class ConfigFile {
         return "";
     }
 
+    /**
+     * The effective value of each named key, as configuration text.
+     *
+     * <p>Built on {@link #effectiveValues} rather than on a second encoder, because a state file that
+     * drifts from the configuration syntax would eventually write something the reader cannot read — and the
+     * round trip through this is already asserted by the check that a generated configuration parses.
+     *
+     * <p>Only the named keys, so a caller can persist a chosen subset. An unknown name is skipped rather
+     * than written as a key nothing understands, which would make the file fail its own validation when it
+     * was read back.
+     *
+     * @param config the configuration whose values are wanted
+     * @param keys the keys to include; an empty collection yields empty text
+     */
+    public static String renderKeys(ExportConfig config, java.util.Collection<String> keys) {
+        if (config == null || keys == null || keys.isEmpty()) {
+            return "";
+        }
+        Map<String, String> values = effectiveValues(config);
+        StringBuilder out = new StringBuilder();
+        for (String key : keys) {
+            String value = values.get(key);
+            if (value == null) {
+                continue;
+            }
+            out.append(key).append(" = ").append(value).append('\n');
+        }
+        return out.toString();
+    }
+
+    /** The keys a configuration could be asked to render, for a caller that wants to check a name. */
+    public static java.util.List<String> renderableKeys() {
+        return java.util.List.of(KNOWN_KEYS);
+    }
+
     /** The td text for each key, as it should appear in a written file. */
     private static Map<String, String> effectiveValues(ExportConfig config) {
         Map<String, String> v = new java.util.LinkedHashMap<>();

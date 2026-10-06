@@ -380,6 +380,22 @@ tasks.register('registrationOrderTest', JavaExec) {
     mainClass = 'org.uee.RegistrationOrderTest'
 }
 
+/**
+ * Runs the user state file checks.
+ *
+ * <p>A member is a zd payload and the whole is compressed into one file, so the round trip is zd's business.
+ * What is checked here is the set of situations a user produces: no file, a file that is not one of these, a
+ * truncated write, and a table whose shape the store has never seen.
+ */
+tasks.register('userStoreTest', JavaExec) {
+    description = 'Runs the user state file checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.UserStoreTest'
+    args = [layout.buildDirectory.dir('user-store-test').get().asFile.absolutePath]
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
@@ -388,5 +404,5 @@ tasks.register('verifyAll') {
             'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest', 'scaleTest',
             'tagTest', 'lootTableTest', 'iconTest', 'categoryTest', 'advancementTest',
             'worldgenTest', 'mcfunctionTest', 'deltaTest', 'assetTest', 'classLoaderTest',
-            'registrationOrderTest'
+            'registrationOrderTest', 'userStoreTest'
 }
