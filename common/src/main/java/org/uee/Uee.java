@@ -247,6 +247,141 @@ public final class Uee {
         return resolveForRun(List.of(), overrides);
     }
 
+    // ---------------------------------------------------------------- the portable state
+
+    /**
+     * The keys that control persistence, which must therefore never be persisted.
+     *
+     * <p>{@code persist} says what is kept and {@code user_dir} says where it is kept. If either could be
+     * written into the state file, a user who set one wrongly would have made it permanent through the very
+     * mechanism it controls — and the surface that would let them correct it reads that same file, so there
+     * would be no way back. Excluding them is a rule of the design rather than a default.
+     */
+    public static final java.util.Set<String> PERSISTENCE_CONTROLS = java.util.Set.of("persist",
+            "user_dir");
+
+    /**
+     * The keys a configuration asks to be kept, minus the ones that may not be.
+     *
+     * <p>Names this build does not recognise are dropped rather than stored: a state file holding a key
+     * nothing understands fails its own validation when read back, which would turn a typo into a file that
+     * no longer loads at all.
+     */
+    public static List<String> persistableKeys(ExportConfig config) {
+        if (config == null || config.persist().isEmpty()) {
+            return List.of();
+        }
+        List<String> known = ConfigFile.renderableKeys();
+        List<String> out = new java.util.ArrayList<>(config.persist().size());
+        for (String key : config.persist()) {
+            if (key == null || PERSISTENCE_CONTROLS.contains(key) || !known.contains(key)) {
+                continue;
+            }
+            out.add(key);
+        }
+        return out;
+    }
+
+    /** Where the portable state lives, given what a configuration says about it. */
+    public static Path userStateFile(ExportConfig config) {
+        String configured = config == null || config.userDir() == null
+                ? null : config.userDir().toString();
+        return org.uee.state.UserStore.fileIn(org.uee.state.UserStore.resolveDir(configured));
+    }
+
+    /**
+     * Exports once, unprompted, if the configuration asks for it.
+     *
+     * <p>Off unless asked, and the check is the first thing the method does — a tool that writes files on
+     * every launch without being asked is a tool people remove. The point of the option is the case it
+     * serves: someone who moves between packs and wants the export to simply be there.
+     *
+     * <p>Submitted as a job rather than run here, for the same reason the command's short form starts a job:
+     * an export reads registries and writes files, and doing that inside a startup callback would hold up
+     * whatever called it.
+     *
+     * @return the job identifier, or zero when nothing was started
+     */
+    public static int maybeAutoRun() {
+        try {
+            ExportConfig config = resolveForRun(ConfigFile.empty()).config();
+            if (!config.autoRun()) {
+                // The default. Nothing is read, nothing is written, and the caller does not have to know
+                // whether a state file exists at all.
+                return 0;
+            }
+            Path root = config.outputDir();
+            UeeJob job = jobs().submit(config, root, () -> {
+                try {
+                    return export(config, root);
+                } catch (java.io.IOException e) {
+                    throw new java.io.UncheckedIOException(e);
+                }
+            });
+            return job.id();
+        } catch (Throwable t) {
+            // A startup that cannot read its own configuration should not stop the game from starting. The
+            // export simply does not happen, and the next thing the user does will report why.
+            return 0;
+        }
+    }
+
+    /**
+     * The portable settings as a layer, or null when there are none.
+     *
+     * <p>Parsed with the same parser as every other configuration text, so a state file cannot describe
+     * something the syntax does not allow and a hand-edited one is validated rather than trusted. Damage is
+     * reported through the complaint list rather than thrown: a state file is not worth failing a run over,
+     * and losing accumulated tables should be visible without stopping an export that could still happen.
+     */
+    private static ConfigFile portableLayer(List<String> complaints) {
+        try {
+            LoaderAdapter current = adapter;
+            if (current == null) {
+                return null;
+            }
+            Path gameDir = Path.of(current.info().gameDirectory());
+            ExportConfig base = ExportConfig.builder()
+                    .outputDir(ExportConfig.defaultOutputDir(gameDir)).build();
+            org.uee.state.UserStore store = org.uee.state.UserStore.read(userStateFile(base));
+            complaints.addAll(store.complaints());
+            String text = org.uee.state.SettingsMember.textOf(store);
+            if (text.isBlank()) {
+                return null;
+            }
+            return ConfigFile.parse(text);
+        } catch (Throwable t) {
+            complaints.add("the portable state could not be read: " + t);
+            return null;
+        }
+    }
+
+    /**
+     * Keeps the declared settings in the portable state.
+     *
+     * <p>Called after a setting is made, so that "declare it once and it sticks" is what actually happens
+     * rather than something the user has to remember to do. Only the whitelisted keys are written, which is
+     * why a setting that is not on the list still changes the session and nothing else.
+     *
+     * @return how many keys were kept, zero when nothing is declared to stick
+     */
+    public static int saveUserState(ExportConfig resolved) throws IOException {
+        List<String> keys = persistableKeys(resolved);
+        Path file = userStateFile(resolved);
+        org.uee.state.UserStore existing = org.uee.state.UserStore.read(file);
+        java.util.Map<String, byte[]> members = new java.util.LinkedHashMap<>(existing.members());
+        if (keys.isEmpty()) {
+            // Nothing is declared to stick, so the settings member is removed rather than left stale: a file
+            // still describing an older choice would apply it on the next run regardless of the whitelist.
+            members.remove(org.uee.state.UserStore.SETTINGS);
+        } else {
+            members.put(org.uee.state.UserStore.SETTINGS, org.uee.state.SettingsMember.encode(
+                    ConfigFile.renderKeys(resolved, keys)));
+        }
+        org.uee.state.UserStore.write(file, members);
+        return keys.size();
+    }
+
     /**
      * Resolves with extra layers between the file and the caller's own description.
      *
@@ -260,7 +395,16 @@ public final class Uee {
         Path gameDir = Path.of(current.info().gameDirectory());
         DatapackCatalog catalog = catalog();
 
-        List<ConfigFile> layers = new java.util.ArrayList<>(5);
+        List<ConfigFile> layers = new java.util.ArrayList<>(6);
+        List<String> portableComplaints = new java.util.ArrayList<>(1);
+        // The portable state sits below the instance's own file: it is a baseline that follows the person,
+        // and a pack that says something different is more specific than that. Read here rather than in a
+        // loader, so every interface -- command, programmatic, automatic -- gets it through the one
+        // resolution path there is.
+        ConfigFile portable = portableLayer(portableComplaints);
+        if (portable != null) {
+            layers.add(portable);
+        }
         layers.add(ConfigFile.readFrom(ConfigResolver.configDir(gameDir)));
         if (sessionLayers != null) {
             layers.addAll(sessionLayers);
@@ -273,8 +417,8 @@ public final class Uee {
                 return withCatalogProblems(ConfigResolver.resolve(
                         ExportConfig.builder()
                                 .outputDir(ExportConfig.defaultOutputDir(gameDir)).build(),
-                        layers), catalog, "flow '" + overrides.flow()
-                                + "' was requested but no datapack defines it");
+                        layers), catalog, List.of("flow '" + overrides.flow()
+                                + "' was requested but no datapack defines it"));
             }
             layers.add(flow.config());
         }
@@ -283,7 +427,7 @@ public final class Uee {
         ConfigResolver.Resolved resolved = ConfigResolver.resolve(
                 ExportConfig.builder().outputDir(ExportConfig.defaultOutputDir(gameDir)).build(),
                 layers);
-        return withCatalogProblems(resolved, catalog, null);
+        return withCatalogProblems(resolved, catalog, portableComplaints);
     }
 
     /**
@@ -293,16 +437,17 @@ public final class Uee {
      * happened to use, rather than only through the one that lists datapacks.
      */
     private static ConfigResolver.Resolved withCatalogProblems(ConfigResolver.Resolved resolved,
-            DatapackCatalog catalog, String extraWarning) {
-        if (catalog.problems().isEmpty() && extraWarning == null) {
+            DatapackCatalog catalog, List<String> extraWarnings) {
+        boolean none = extraWarnings == null || extraWarnings.isEmpty();
+        if (catalog.problems().isEmpty() && none) {
             return resolved;
         }
         java.util.List<String> warnings = new java.util.ArrayList<>(resolved.warnings());
         for (var problem : catalog.problems()) {
             warnings.add("datapack: " + problem.message());
         }
-        if (extraWarning != null) {
-            warnings.add(extraWarning);
+        if (!none) {
+            warnings.addAll(extraWarnings);
         }
         return new ConfigResolver.Resolved(resolved.config(), warnings, resolved.errors());
     }

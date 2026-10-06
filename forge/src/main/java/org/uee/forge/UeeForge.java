@@ -36,6 +36,9 @@ public final class UeeForge {
         adapter.bindResources(event.getServer().getResourceManager());
         adapter.bindRegistryAccess(event.getServer().registryAccess());
         adapter.bindRecipes(event.getServer().getRecipeManager().getRecipes());
+        // Once everything is bound, the one place an unprompted export could happen. Off unless the
+        // configuration asks for it, and submitted as a job when it is, so startup is not held up.
+        org.uee.Uee.maybeAutoRun();
     }
 
     private void onRegisterCommands(RegisterCommandsEvent event) {

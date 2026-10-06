@@ -60,15 +60,19 @@ public final class ConfigFile {
     public static final String[] KNOWN_KEYS = {
             "output", "package", "formats", "kinds",
             "analyze", "analysis_separate", "package_per_kind", "quiet",
-            "fields", "exclude_fields", "dry_run", "delta", "assets", "include_tags", "exclude_tags",
+            "fields", "exclude_fields", "dry_run", "delta", "assets", "user_dir", "persist", "auto_run",
+            "include_tags", "exclude_tags",
             "max_file_mb",
-            "icons", "pretty", "incremental", "include_paths",
+            "icons", "pretty", "include_paths",
             "shard_by_namespace", "shard_size", "memory_limit_mb", "threads",
             "include_namespaces", "exclude_namespaces", "exclude_mods",
             "wiki_format", "wiki_icons", "wiki_entities", "wiki_recipes", "wiki_blocks_separate",
             "datapacks", "global_datapacks", "global_datapack_dir", "flow", "targets", "strategies"};
 
     private final Path output;
+
+    /** Null when the file says nothing about it, which falls through to the environment then the home dir. */
+    private final Path userDir;
     private final String packageName;
     private final Set<String> formats;
     private final Set<ElementKind> kinds;
@@ -84,12 +88,17 @@ public final class ConfigFile {
 
     /** Whether the file says anything about assets. Null means it does not, which is not "off". */
     private final Boolean assets;
+
+    /** Whether the file asks for an export at startup; null when it says nothing. */
+    private final Boolean autoRun;
     private final Set<String> includeTags;
+
+    /** The keys the file asks to be kept; null when it says nothing. */
+    private final Set<String> persist;
     private final Set<String> excludeTags;
     private final Integer maxFileMb;
     private final Boolean icons;
     private final Boolean pretty;
-    private final Boolean incremental;
     private final Boolean includePaths;
     private final Boolean shardByNamespace;
     private final Integer shardSize;
@@ -128,12 +137,14 @@ public final class ConfigFile {
         this.dryRun = b.dryRun;
         this.delta = b.delta;
         this.assets = b.assets;
+        this.userDir = b.userDir;
+        this.persist = b.persist;
+        this.autoRun = b.autoRun;
         this.includeTags = b.includeTags;
         this.excludeTags = b.excludeTags;
         this.maxFileMb = b.maxFileMb;
         this.icons = b.icons;
         this.pretty = b.pretty;
-        this.incremental = b.incremental;
         this.includePaths = b.includePaths;
         this.shardByNamespace = b.shardByNamespace;
         this.shardSize = b.shardSize;
@@ -200,6 +211,15 @@ public final class ConfigFile {
         if (output != null) {
             keys.add("output");
         }
+        if (userDir != null) {
+            keys.add("user_dir");
+        }
+        if (persist != null) {
+            keys.add("persist");
+        }
+        if (autoRun != null) {
+            keys.add("auto_run");
+        }
         if (packageName != null) {
             keys.add("package");
         }
@@ -249,9 +269,6 @@ public final class ConfigFile {
         }
         if (pretty != null) {
             keys.add("pretty");
-        }
-        if (incremental != null) {
-            keys.add("incremental");
         }
         if (includePaths != null) {
             keys.add("include_paths");
@@ -313,7 +330,7 @@ public final class ConfigFile {
                 && analyze == null && analysisSeparate == null && packagePerKind == null
                 && quiet == null && (fields == null || fields.isAll()) && dryRun == null
                 && includeTags == null && excludeTags == null && maxFileMb == null
-                && icons == null && pretty == null && incremental == null && includePaths == null
+                && icons == null && pretty == null && includePaths == null
                 && shardByNamespace == null && shardSize == null && memoryLimitMb == null
                 && threads == null && includeNamespaces == null && excludeNamespaces == null
                 && excludeMods == null && wikiFormat == null && wikiIcons == null
@@ -367,6 +384,15 @@ public final class ConfigFile {
         if (assets != null) {
             b.assets(assets);
         }
+        if (userDir != null) {
+            b.userDir(userDir);
+        }
+        if (persist != null) {
+            b.persist(persist);
+        }
+        if (autoRun != null) {
+            b.autoRun(autoRun);
+        }
         if (includeTags != null) {
             for (String tag : includeTags) {
                 b.includeTag(tag);
@@ -385,9 +411,6 @@ public final class ConfigFile {
         }
         if (pretty != null) {
             b.pretty(pretty);
-        }
-        if (incremental != null) {
-            b.incremental(incremental);
         }
         if (includePaths != null) {
             b.includePaths(includePaths);
@@ -500,6 +523,9 @@ public final class ConfigFile {
             TdValue value = root.get(key);
             switch (key.toLowerCase(java.util.Locale.ROOT)) {
                 case "output" -> b.output = path(value.asString());
+                case "user_dir" -> b.userDir = path(value.asString());
+                case "persist" -> b.persist = new LinkedHashSet<>(strings(value));
+                case "auto_run" -> b.autoRun = value.asBool();
                 case "package" -> b.packageName = value.asString();
                 case "formats" -> {
                     Set<String> formats = Tokens.formats(strings(value));
@@ -529,7 +555,6 @@ public final class ConfigFile {
                 case "max_file_mb" -> b.maxFileMb = (int) value.asInt();
                 case "icons" -> b.icons = value.asBool();
                 case "pretty" -> b.pretty = value.asBool();
-                case "incremental" -> b.incremental = value.asBool();
                 case "include_paths" -> b.includePaths = value.asBool();
                 case "shard_by_namespace" -> b.shardByNamespace = value.asBool();
                 case "shard_size" -> b.shardSize = (int) value.asInt();
@@ -603,7 +628,6 @@ public final class ConfigFile {
         b.put("package_per_kind", TdValue.of(config.packagePerKind()));
         b.put("icons", TdValue.of(config.icons()));
         b.put("pretty", TdValue.of(config.pretty()));
-        b.put("incremental", TdValue.of(config.incremental()));
         b.put("include_paths", TdValue.of(config.includePaths()));
         b.put("shard_by_namespace", TdValue.of(config.shardByNamespace()));
         b.put("shard_size", TdValue.of((long) config.shardSize()));
@@ -735,6 +759,27 @@ public final class ConfigFile {
                 include_tags = []
                 // 这些标签的元素跳过 / elements carrying these are skipped
                 exclude_tags = []
+
+                // 持久化目录：用户状态（设置 + 声明表）放在哪，默认家目录下的 .uee/。
+                // ★ 留空 = 用默认；也可用环境变量 UEE_USER_DIR 覆盖（CI／便携／多份人格）。
+                // ★ **此键自身不可被持久化** —— 否则设错了就再也改不回来。
+                // Where the portable state (settings and declaration tables) lives; empty means the default
+                // of .uee/ in the home directory. Overridable by UEE_USER_DIR for CI and portable setups.
+                // This key is deliberately never persisted, so a wrong value stays correctable.
+                user_dir = ""
+
+                // 持久化白名单：**只有**这里列出的键会被「粘住」（跨运行、跨实例）。默认空 = 什么都不粘。
+                // ★ 理由：一次「试试 ndjson」不该三个整合包之后还留着；哪些会粘应当是**声明**出来的。
+                // ★ persist 与 user_dir 自身永不进入此表。
+                // The persistence whitelist: only the keys named here stick, across runs and across
+                // instances. Empty by default, which sticks nothing. Trying ndjson once should not still be
+                // in force three packs later. persist and user_dir are never included.
+                persist = []
+
+                // 启动即导出（**默认关**）。开启后游戏一启动就自动跑一次导出；走作业，不卡启动线程。
+                // Export as soon as a game has started (off by default). The run is submitted as a job, so it
+                // does not hold up startup, and nothing is written at all unless this is turned on.
+                auto_run = false
 
                 // 资产导出：把 assets/<命名空间>/ 下的**全部文件原样拷贝**到输出（贴图/模型/音效/语言文件…）。
                 // ★ **字节流原样拷贝，绝不解码**——解码会改变哈希，而指纹是对落盘字节取的 ⇒ 一旦重编码，
@@ -1014,6 +1059,9 @@ public final class ConfigFile {
     private static Map<String, String> effectiveValues(ExportConfig config) {
         Map<String, String> v = new java.util.LinkedHashMap<>();
         v.put("output", quote(portablePath(config.outputDir())));
+        v.put("user_dir", config.userDir() == null ? "\"\"" : quote(config.userDir().toString()));
+        v.put("persist", list(config.persist()));
+        v.put("auto_run", Boolean.toString(config.autoRun()));
         v.put("package", quote(config.packageName()));
         v.put("formats", list(config.formats()));
         v.put("kinds", kindListText(config.kinds()));
@@ -1124,12 +1172,14 @@ public final class ConfigFile {
         private Boolean dryRun;
         private Boolean delta;
         private Boolean assets;
+        private Path userDir;
+        private Set<String> persist;
+        private Boolean autoRun;
         private Set<String> includeTags;
         private Set<String> excludeTags;
         private Integer maxFileMb;
         private Boolean icons;
         private Boolean pretty;
-        private Boolean incremental;
         private Boolean includePaths;
         private Boolean shardByNamespace;
         private Integer shardSize;
@@ -1238,6 +1288,21 @@ public final class ConfigFile {
             return this;
         }
 
+        public Builder userDir(Path dir) {
+            this.userDir = dir;
+            return this;
+        }
+
+        public Builder persist(Set<String> keys) {
+            this.persist = keys;
+            return this;
+        }
+
+        public Builder autoRun(boolean on) {
+            this.autoRun = on;
+            return this;
+        }
+
         public Builder assets(boolean on) {
             this.assets = on;
             return this;
@@ -1298,11 +1363,6 @@ public final class ConfigFile {
 
         public Builder pretty(boolean on) {
             this.pretty = on;
-            return this;
-        }
-
-        public Builder incremental(boolean on) {
-            this.incremental = on;
             return this;
         }
 

@@ -725,11 +725,34 @@ public final class UeeCommand {
         try {
             CommandSurface.Setting setting = work.get();
             report(source, setting.description());
+            // Every set verb funnels through here, so "declare it once and it sticks" happens without
+            // touching each verb -- and no verb added later can quietly forget to keep its setting.
+            keepDeclaredSettings(source);
             return setting.count();
         } catch (IllegalArgumentException e) {
             // The surface's messages are already phrased for a user and already say how to fix it.
             source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
             return 0;
+        }
+    }
+
+    /**
+     * Writes the declared settings to the portable state, and says so when something was kept.
+     *
+     * <p>Silent when nothing is declared to stick: that is the default, and reporting it after every setting
+     * would be noise. A failure is reported rather than swallowed, because a state file that cannot be
+     * written means the declaration did not take effect — which the user would otherwise discover much later
+     * and in the wrong context.
+     */
+    private static void keepDeclaredSettings(CommandSourceStack source) {
+        try {
+            org.uee.config.ExportConfig resolved = Uee.resolveForRun(ConfigFile.empty()).config();
+            int kept = Uee.saveUserState(resolved);
+            if (kept > 0) {
+                report(source, "kept " + kept + " setting(s) in " + Uee.userStateFile(resolved));
+            }
+        } catch (java.io.IOException | IllegalStateException e) {
+            report(source, "could not keep the declared settings: " + e);
         }
     }
 

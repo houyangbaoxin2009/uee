@@ -51,6 +51,13 @@ public final class ExportConfig {
             {JSON, WIKI, NDJSON, TD, ZD, YAML, TOML, XML};
 
     private final Path outputDir;
+    /**
+     * Where the portable state lives, or null for the default.
+     *
+     * <p>Null rather than a resolved path, because "not set" and "set to the default" are different facts:
+     * only the first should fall through to the environment variable and then to the home directory.
+     */
+    private final Path userDir;
     private final String packageName;
     private final Set<String> formats;
     private final Set<ElementKind> kinds;
@@ -59,7 +66,6 @@ public final class ExportConfig {
     private final Set<String> excludeMods;
     private final boolean icons;
     private final boolean pretty;
-    private final boolean incremental;
     private final boolean shardByNamespace;
     private final int shardSize;
     private final long memoryLimitBytes;
@@ -94,7 +100,31 @@ public final class ExportConfig {
      * different artifact on every run and the delta would report every asset as changed forever.
      */
     private final boolean assets;
+    /**
+     * Whether to export as soon as a game has started, without being asked.
+     *
+     * <p>Off by default, and deliberately. It writes files and spends time on every launch, and a tool that
+     * does that uninvited is a tool people remove. The point of the option is the case it serves: someone
+     * who analyses pack after pack and wants the export to be simply there, having declared once that they
+     * want it.
+     *
+     * <p>Persisted like any other preference, since the whitelist is what decides that and this is exactly
+     * the kind of decision worth keeping.
+     */
+    private final boolean autoRun;
     private final Set<String> includeTags;
+    /**
+     * Which settings are kept between runs and between instances.
+     *
+     * <p>A whitelist rather than everything, because a session accumulates experiments. Someone who tries
+     * {@code ndjson} once to see what it looks like should not still be getting it three packs later, and
+     * which settings stick is therefore something to declare rather than to infer.
+     *
+     * <p>The keys that control persistence are excluded by construction and not merely by default; see
+     * {@code Uee.persistableKeys}. A setting that could make itself permanent, and could not then be
+     * changed from the surface that made it, has no way back.
+     */
+    private final Set<String> persist;
     private final Set<String> excludeTags;
     private final long maxFileBytes;
     private final boolean datapacks;
@@ -116,7 +146,6 @@ public final class ExportConfig {
         this.excludeMods = Collections.unmodifiableSet(new LinkedHashSet<>(b.excludeMods));
         this.icons = b.icons;
         this.pretty = b.pretty;
-        this.incremental = b.incremental;
         this.shardByNamespace = b.shardByNamespace;
         this.shardSize = b.shardSize;
         this.memoryLimitBytes = b.memoryLimitBytes;
@@ -130,6 +159,9 @@ public final class ExportConfig {
         this.dryRun = b.dryRun;
         this.delta = b.delta;
         this.assets = b.assets;
+        this.userDir = b.userDir;
+        this.persist = b.persist == null ? Set.of() : Set.copyOf(b.persist);
+        this.autoRun = b.autoRun;
         this.includeTags = Collections.unmodifiableSet(new LinkedHashSet<>(b.includeTags));
         this.excludeTags = Collections.unmodifiableSet(new LinkedHashSet<>(b.excludeTags));
         this.maxFileBytes = b.maxFileBytes;
@@ -178,10 +210,6 @@ public final class ExportConfig {
 
     public boolean pretty() {
         return pretty;
-    }
-
-    public boolean incremental() {
-        return incremental;
     }
 
     public boolean shardByNamespace() {
@@ -287,6 +315,21 @@ public final class ExportConfig {
     /** Whether to copy the pack's assets into the output. */
     public boolean assets() {
         return assets;
+    }
+
+    /** Where the portable state lives, or null for the default. */
+    public Path userDir() {
+        return userDir;
+    }
+
+    /** Which settings are kept between runs and between instances. */
+    public Set<String> persist() {
+        return persist;
+    }
+
+    /** Whether to export as soon as a game has started, without being asked. */
+    public boolean autoRun() {
+        return autoRun;
     }
 
     /** Only elements carrying one of these tags. Empty means no tag restriction. */
@@ -442,7 +485,6 @@ public final class ExportConfig {
         b.excludeMods = new LinkedHashSet<>(excludeMods);
         b.icons = icons;
         b.pretty = pretty;
-        b.incremental = incremental;
         b.shardByNamespace = shardByNamespace;
         b.shardSize = shardSize;
         b.memoryLimitBytes = memoryLimitBytes;
@@ -459,6 +501,9 @@ public final class ExportConfig {
         // than like a copied field being missing.
         b.delta = delta;
         b.assets = assets;
+        b.userDir = userDir;
+        b.persist = persist;
+        b.autoRun = autoRun;
         b.includeTags = new LinkedHashSet<>(includeTags);
         b.excludeTags = new LinkedHashSet<>(excludeTags);
         b.maxFileBytes = maxFileBytes;
@@ -516,7 +561,6 @@ public final class ExportConfig {
         private Set<String> excludeMods = new LinkedHashSet<>();
         private boolean icons = false;
         private boolean pretty = false;
-        private boolean incremental = false;
         private boolean shardByNamespace = true;
         private int shardSize = 20_000;
         /**
@@ -534,6 +578,9 @@ public final class ExportConfig {
         private boolean dryRun = false;
         private boolean delta = false;
         private boolean assets = false;
+        private Path userDir;
+        private Set<String> persist = Set.of();
+        private boolean autoRun = false;
         private Set<String> includeTags = new LinkedHashSet<>();
         private Set<String> excludeTags = new LinkedHashSet<>();
         private long maxFileBytes = 0;
@@ -598,11 +645,6 @@ public final class ExportConfig {
             return this;
         }
 
-        public Builder incremental(boolean on) {
-            this.incremental = on;
-            return this;
-        }
-
         public Builder shardByNamespace(boolean on) {
             this.shardByNamespace = on;
             return this;
@@ -650,6 +692,24 @@ public final class ExportConfig {
 
         public Builder fields(FieldMask mask) {
             this.fields = mask == null ? FieldMask.all() : mask;
+            return this;
+        }
+
+        /** Sets where the portable state lives. */
+        public Builder userDir(Path dir) {
+            this.userDir = dir;
+            return this;
+        }
+
+        /** Declares which settings are kept between runs. */
+        public Builder persist(Set<String> keys) {
+            this.persist = keys == null ? Set.of() : keys;
+            return this;
+        }
+
+        /** Asks for an export as soon as a game has started. */
+        public Builder autoRun(boolean on) {
+            this.autoRun = on;
             return this;
         }
 

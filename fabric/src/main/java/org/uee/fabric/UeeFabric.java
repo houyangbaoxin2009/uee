@@ -34,6 +34,9 @@ public final class UeeFabric implements ModInitializer {
             // Data-loaded registries -- enchantments, biomes, damage types -- only exist while a server
             // does, so this is the moment they become collectable.
             adapter.bindRegistryAccess(server.registryAccess());
+        // Once everything is bound, the one place an unprompted export could happen. Off unless the
+        // configuration asks for it, and submitted as a job when it is, so startup is not held up.
+        org.uee.Uee.maybeAutoRun();
         });
 
         if (FabricLoader.getInstance().getEnvironmentType() == EnvType.CLIENT) {
