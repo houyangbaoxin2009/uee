@@ -233,6 +233,18 @@ otherwise "no translations" and "the pack has none" are indistinguishable.
 
 ★ **每个声明的类目都必有采集器**，由 `categoryTest` 守着——曾经有 9 个类目可选却什么都产不出。
 
+★ **差量导出（默认关）**：`delta = true` 时按**分片**内容指纹（SHA-256）只写变化了的分片，未变的不重写、
+消失的删除；快照在输出目录的 `.uee-snapshot`。★ 为什么用 SHA-256 而不是校验和：差量把「指纹相同」
+当作「没变」，一次碰撞就是**一次丢失的变更**，且**静默**。★ 为什么按分片而非按记录：写端是流式缓冲、
+记录之间没有边界。★ 第二次跑同样的输入 ⇒ **一个字节都不写**（真实管线实测：131 个分片全部识别为未变）。
+
+★ **Incremental export (off by default)**: with `delta = true`, only the shards whose content changed are
+written, unchanged ones are left alone and vanished ones are deleted, keyed on SHA-256 in a
+`.uee-snapshot` beside the artifacts. SHA-256 rather than a checksum because a delta treats equal
+fingerprints as "unchanged", and a collision is therefore a silently missing change. The unit is the shard
+rather than the record because the writers stream into a buffer and records have no boundary. A second run
+over identical input writes nothing at all.
+
 ★ **`worldgen` 是「包写了什么」而不是「游戏加载了什么」**：十四种文件共用一个类目，记录里带种类、类型
 与引用的 id。生物群系与结构另有注册表类目给出「加载后」的答案，两个答案都拿得到，谁也不靠猜。
 
