@@ -30,8 +30,13 @@ import java.util.List;
  * leaves out.
  *
  * <p>Vanilla is not the limit, which is the awkward part: a pack may add a kind, and it will not be swept.
- * The alternative would be to accept an arbitrary list from configuration so a pack can declare its own, and
- * that belongs with the rest of the filtering options rather than being invented here.
+ * So the list is a <b>default</b> rather than the whole story, and a user can declare more — see
+ * {@link #TABLE} for where those declarations live and {@link #merge} for how the two combine.
+ *
+ * <p>Extra kinds are cheap, which is what makes accumulating them safe. A declared kind that matches nothing
+ * costs one directory lookup that finds nothing, so a table grown across a dozen packs stays harmless on
+ * each of them, and the failure it prevents — a kind present but never swept — is silent and loses files.
+ * That asymmetry is the reason the list may be extended freely rather than carefully.
  *
  * <h2>Root files are a separate matter</h2>
  *
@@ -68,7 +73,75 @@ public final class AssetSweep {
      */
     public static final List<String> ROOT_FILES = List.of("sounds.json");
 
+    /**
+     * The declaration table holding additional kinds.
+     *
+     * <p>A table rather than a configuration key, because this is knowledge about packs rather than a
+     * preference: it accumulates, it belongs with the rest of what the user has established, and it should
+     * follow them between instances for the same reason the settings do.
+     */
+    public static final String TABLE = "assetKinds";
+
     private AssetSweep() {
+    }
+
+    /**
+     * Whether a name may be declared as a kind.
+     *
+     * <p>Checked before it is stored rather than when it is used, because the failure mode of a bad name is
+     * silence: a kind that cannot be turned into a path would be swept, find nothing, and look exactly like
+     * a kind with no files in it. Rejecting it at the point of declaration is the only place the user can be
+     * told.
+     *
+     * <p>The rules are the ones a path segment has to satisfy for the sweep to reach anything: no separator,
+     * no leading dot (which is not content), nothing empty, and it must survive being turned into a resource
+     * path.
+     */
+    public static boolean isValidKind(String kind) {
+        if (kind == null || kind.isEmpty()) {
+            return false;
+        }
+        if (kind.contains("/") || kind.contains("\\") || kind.startsWith(".")) {
+            return false;
+        }
+        for (int i = 0; i < kind.length(); i++) {
+            char c = kind.charAt(i);
+            // The same set a resource location allows, lower case only: asset directories are named that way,
+            // and accepting anything else would store a name that can never match.
+            boolean fine = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-'
+                    || c == '.';
+            if (!fine) {
+                return false;
+            }
+        }
+        return AssetPath.isCopyable(kind + "/probe") && AssetPath.outputPath("probe", kind + "/probe") != null;
+    }
+
+    /**
+     * The kinds to sweep: the built-in list with the declared ones added.
+     *
+     * <p>Built-ins first and in their own order, since they are what the list looked like before anyone
+     * added to it and a report reads best that way; then the additions, sorted so that the result does not
+     * depend on the order they were declared in. Duplicates are dropped, so declaring one of the built-ins
+     * changes nothing rather than sweeping it twice.
+     *
+     * @param declared extra kinds, as read from {@link #TABLE}; null or empty for none
+     */
+    public static List<String> merge(List<String> declared) {
+        java.util.LinkedHashSet<String> kinds = new java.util.LinkedHashSet<>(KINDS);
+        if (declared != null) {
+            java.util.TreeSet<String> additions = new java.util.TreeSet<>();
+            for (String kind : declared) {
+                // Names that cannot be swept are skipped rather than attempted: they would be written into
+                // the report's basis as though they were swept, which would be a claim the sweep cannot
+                // honour. The command refuses them at the point of declaration; this is the second line.
+                if (isValidKind(kind) && !kinds.contains(kind)) {
+                    additions.add(kind);
+                }
+            }
+            kinds.addAll(additions);
+        }
+        return List.copyOf(kinds);
     }
 
     /** The prefix to list for a kind, which is the kind itself. Absent here this is where a pack's own would go. */
@@ -78,7 +151,17 @@ public final class AssetSweep {
 
     /** A line naming the basis, for a report that has one line to spend on it. */
     public static String describe() {
-        return KINDS.size() + " kinds + " + ROOT_FILES.size() + " root file"
+        return describe(KINDS.size());
+    }
+
+    /**
+     * The same line, for a sweep that covered more than the built-in kinds.
+     *
+     * <p>The total rather than the addition: a reader wants to know how much was asked for, and a report
+     * that said "nine plus three" would need a second number to be useful.
+     */
+    public static String describe(int totalKinds) {
+        return totalKinds + " kinds + " + ROOT_FILES.size() + " root file"
                 + (ROOT_FILES.size() == 1 ? "" : "s");
     }
 }

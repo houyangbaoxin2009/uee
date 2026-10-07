@@ -276,6 +276,19 @@ public final class UeeCommand {
                 .then(Commands.literal("globalpack")
                         .executes(ctx -> globalPack(ctx.getSource())))
 
+                .then(Commands.literal("declare")
+                        .then(Commands.literal("list")
+                                .executes(ctx -> declareList(ctx.getSource())))
+                        .then(Commands.literal("where")
+                                .executes(ctx -> declareWhere(ctx.getSource())))
+                        .then(Commands.literal("asset-kind")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .executes(ctx -> declareAssetKind(ctx.getSource(),
+                                                arg(ctx, "name"), true))))
+                        .then(Commands.literal("no-asset-kind")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .executes(ctx -> declareAssetKind(ctx.getSource(),
+                                                arg(ctx, "name"), false)))))
                 .then(Commands.literal("config")
                         .executes(ctx -> configShow(ctx.getSource()))
                         .then(Commands.literal("show").executes(ctx -> configShow(ctx.getSource())))
@@ -1017,6 +1030,98 @@ public final class UeeCommand {
         }
         source.sendSuccess(() -> Component.literal("config file: ").append(link(source, file)), false);
         return 1;
+    }
+
+    /**
+     * Adds or removes a declared asset kind.
+     *
+     * <p>The kinds swept are a built-in list, and nothing in the resource API can report what a pack
+     * actually contains — asking for everything is an invalid path whose rejection is swallowed, and nothing
+     * enumerates a namespace. So the one person who can tell the tool that a pack keeps content somewhere
+     * unusual is the person looking at it, and this is where they say so.
+     *
+     * <p>Refused rather than stored when the name could not be swept: a kind that cannot become a path would
+     * be swept, find nothing, and be indistinguishable from a kind with no files in it. Telling the user at
+     * the point of declaration is the only moment the mistake is visible.
+     */
+    private static int declareAssetKind(CommandSourceStack source, String name, boolean add) {
+        String kind = name == null ? "" : name.trim().toLowerCase(java.util.Locale.ROOT);
+        if (add && !org.uee.asset.AssetSweep.isValidKind(kind)) {
+            source.sendFailure(Component.literal(Uee.NAME + ": '" + name
+                    + "' cannot be swept as a kind; it has to be one path segment of lower-case letters,"
+                    + " digits, '_', '-' or '.', and must not begin with a dot"));
+            return 0;
+        }
+        try {
+            ExportConfig config = Uee.resolveForRun(ConfigFile.empty()).config();
+            java.util.List<String> kinds = new java.util.ArrayList<>(
+                    Uee.declared(config, org.uee.asset.AssetSweep.TABLE));
+            boolean changed = add ? addIfAbsent(kinds, kind) : kinds.remove(kind);
+            if (!changed) {
+                report(source, add ? "already declared: " + kind : "not declared: " + kind);
+                return 0;
+            }
+            Uee.declare(config, org.uee.asset.AssetSweep.TABLE, kinds);
+            int total = org.uee.asset.AssetSweep.merge(kinds).size();
+            report(source, (add ? "declared asset kind " + kind : "removed asset kind " + kind)
+                    + "; the sweep now covers " + total + " kind(s)");
+            return 1;
+        } catch (java.io.IOException | IllegalStateException e) {
+            source.sendFailure(Component.literal(Uee.NAME + ": could not write the declaration: " + e));
+            return 0;
+        }
+    }
+
+    /** Adds a name if it is not there. Sorted insertion, so a table reads in a stable order. */
+    private static boolean addIfAbsent(java.util.List<String> names, String name) {
+        if (names.contains(name)) {
+            return false;
+        }
+        names.add(name);
+        java.util.Collections.sort(names);
+        return true;
+    }
+
+    /**
+     * What has been declared, and where it is kept.
+     *
+     * <p>Lists the built-in asset kinds as well as the declared ones, because "nine kinds" and "nine plus
+     * what you added" are the two numbers that decide whether a sweep will find a pack's content, and a user
+     * who has declared something wants to see both.
+     */
+    private static int declareList(CommandSourceStack source) {
+        try {
+            ExportConfig config = Uee.resolveForRun(ConfigFile.empty()).config();
+            java.util.List<String> declared = Uee.declared(config, org.uee.asset.AssetSweep.TABLE);
+            report(source, "asset kinds: " + org.uee.asset.AssetSweep.KINDS.size() + " built in, "
+                    + declared.size() + " declared");
+            for (String kind : declared) {
+                report(source, "  + " + kind);
+            }
+            if (declared.isEmpty()) {
+                report(source, "  nothing declared; /uee declare asset-kind <name> adds one");
+            }
+            report(source, "the sweep covers "
+                    + org.uee.asset.AssetSweep.merge(declared).size() + " kind(s)");
+            return declared.size();
+        } catch (java.io.IOException | IllegalStateException e) {
+            source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int declareWhere(CommandSourceStack source) {
+        try {
+            ExportConfig config = Uee.resolveForRun(ConfigFile.empty()).config();
+            Path file = Uee.userStateFile(config);
+            report(source, "declarations and settings are kept in " + file);
+            report(source, "set 'user_dir' or the " + org.uee.state.UserStore.DIR_ENV
+                    + " environment variable to move it");
+            return 1;
+        } catch (java.io.IOException | IllegalStateException e) {
+            source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
+            return 0;
+        }
     }
 
     private static int configSave(CommandSourceStack source) {

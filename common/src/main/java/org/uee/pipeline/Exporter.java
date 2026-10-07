@@ -110,7 +110,16 @@ public final class Exporter implements ElementSink {
     /** How many stale artifacts this run removed, for the summary. */
     private int deletedByDelta;
 
-    /** Assets offered for copying, how many were actually written, and how many were skipped as unchanged. */
+    /**
+     * How many asset kinds the sweep asked for, or zero until it has been asked.
+     *
+     * <p>Cached because reading the declaration costs a state file read and a decompression, and the summary
+     * wants the number once while assets arrive one at a time. Computed lazily rather than in the
+     * constructor so a run without assets never reads the state file at all.
+     */
+    private int assetKinds;
+
+    /** Assets offered for copying, how many were written, and how many were recognised as unchanged. */
     private int assetCount;
     private int assetCopied;
     private int assetSkipped;
@@ -832,8 +841,23 @@ public final class Exporter implements ElementSink {
         // The basis of the sweep, said out loud. A directory outside the declared kinds is not swept and
         // cannot be discovered, so the report names what was asked for rather than leaving a shortfall to
         // be puzzled over.
-        sb.append(" over ").append(org.uee.asset.AssetSweep.describe());
+        sb.append(" over ").append(org.uee.asset.AssetSweep.describe(assetKindCount()));
         return sb.toString();
+    }
+
+    /**
+     * The number of kinds the sweep covered, read once and remembered.
+     *
+     * <p>Asked here rather than per asset: the count is the same for all of them, and re-reading the state
+     * file for each of several hundred files would be a decompression apiece for a number that does not
+     * change.
+     */
+    private int assetKindCount() {
+        if (assetKinds == 0) {
+            assetKinds = org.uee.asset.AssetSweep.merge(
+                    org.uee.Uee.declared(config, org.uee.asset.AssetSweep.TABLE)).size();
+        }
+        return assetKinds;
     }
 
     /** One element that could not be collected. */

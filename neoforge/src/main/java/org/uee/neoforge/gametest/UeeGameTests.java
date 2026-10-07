@@ -599,6 +599,33 @@ public final class UeeGameTests {
                 helper.assertTrue(!sink.assets.stream().anyMatch(a -> a.contains("invented_kind")),
                         "a kind outside the declared sweep was collected, so the basis is not what the"
                                 + " report claims: " + sink.assets);
+
+                // Now declare it, which is the whole remedy for the limitation just asserted: nothing in the
+                // resource API can report what a pack contains, so the one person who can say a pack keeps
+                // content somewhere unusual is the person looking at it. The declaration is written to a
+                // state directory of this test's own, so nothing touches the user's real one.
+                java.nio.file.Path stateDir = java.nio.file.Files.createTempDirectory("uee-state");
+                try {
+                    ExportConfig declaring = ExportConfig.builder()
+                            .assets(true)
+                            .userDir(stateDir)
+                            .build();
+                    Uee.declare(declaring, org.uee.asset.AssetSweep.TABLE,
+                            java.util.List.of("invented_kind"));
+                    helper.assertTrue(
+                            Uee.declared(declaring, org.uee.asset.AssetSweep.TABLE)
+                                    .contains("invented_kind"),
+                            "the declaration did not survive being written and read");
+
+                    RecordingSink after = new RecordingSink();
+                    adapter.collectAssets(declaring, after);
+                    helper.assertTrue(
+                            after.assets.stream().anyMatch(a -> a.contains("invented_kind")),
+                            "a declared kind was still not swept, so the declaration reaches nothing: "
+                                    + after.assets);
+                } finally {
+                    deleteRecursively(stateDir);
+                }
             }
         } catch (Exception e) {
             helper.fail("the client path threw: " + e);

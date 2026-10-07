@@ -10,8 +10,10 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
+import org.uee.config.ExportConfig;
 import org.uee.asset.AssetPath;
 import org.uee.asset.AssetSweep;
+import org.uee.state.SettingsMember;
 import org.uee.delta.Fingerprint;
 import org.uee.spi.BytesSource;
 
@@ -40,6 +42,7 @@ public final class AssetTest {
         paths();
         whatIsNotContent();
         theDeclaredSweep();
+        declaredKindsExtendTheSweep(root.resolve("declared"));
         copying(root.resolve("copy"));
 
         System.out.println();
@@ -199,6 +202,95 @@ public final class AssetTest {
      * the same reason: a declaration that nothing can act on looks identical to a declaration that works
      * until something tries.
      */
+    // ---------------------------------------------------------------- declared kinds
+
+    /**
+     * A declared kind extends the sweep, and it is the only way a pack's own directory can be reached.
+     *
+     * <p>Checked end to end through the store, because that is the path that matters: the command writes the
+     * table, the collector reads it, and the sweep covers the extra kind. A merge that worked while the
+     * table went unread would leave the feature looking present and doing nothing — which is the shape of
+     * defect this whole table exists to avoid.
+     */
+    private static void declaredKindsExtendTheSweep(Path dir) throws IOException {
+        section("declared kinds");
+
+        // The built-in list is the default, not the ceiling.
+        check("with nothing declared the sweep is the built-in kinds",
+                AssetSweep.merge(List.of()).equals(AssetSweep.KINDS));
+        check("and null is the same as empty",
+                AssetSweep.merge(null).equals(AssetSweep.KINDS));
+
+        List<String> withExtra = AssetSweep.merge(List.of("cutscenes", "atlases"));
+        check("a declared kind is added", withExtra.contains("cutscenes"));
+        check("the built-in kinds are still there", withExtra.containsAll(AssetSweep.KINDS));
+        check("and one that is already built in is not duplicated",
+                withExtra.size() == AssetSweep.KINDS.size() + 1);
+        check("the built-ins come first", withExtra.get(0).equals(AssetSweep.KINDS.get(0)));
+
+        // Sorted additions, so the result does not depend on the order they were declared in.
+        check("additions are ordered, not left in declaration order",
+                AssetSweep.merge(List.of("zebra", "apple")).equals(
+                        AssetSweep.merge(List.of("apple", "zebra"))));
+
+        // A name that cannot be swept is refused at the point of declaration, because the failure otherwise
+        // is silence: a kind that cannot become a path would find nothing and look like an empty directory.
+        check("a name with a separator is refused", !AssetSweep.isValidKind("a/b"));
+        check("an absolute-looking one too", !AssetSweep.isValidKind("/textures"));
+        check("a backslash too", !AssetSweep.isValidKind("a\\b"));
+        check("a dotfile-looking one is refused", !AssetSweep.isValidKind(".hidden"));
+        check("an empty name is refused", !AssetSweep.isValidKind(""));
+        check("and null", !AssetSweep.isValidKind(null));
+        check("upper case is refused, since asset directories are lower case",
+                !AssetSweep.isValidKind("Textures"));
+        check("a space is refused", !AssetSweep.isValidKind("my kind"));
+        check("while an ordinary name is accepted", AssetSweep.isValidKind("cutscenes"));
+        check("including one with digits, dashes and underscores",
+                AssetSweep.isValidKind("v2_cut-scenes.x"));
+        // And a refused name never reaches the sweep, even if it got into the table by hand.
+        check("an invalid name in the table is skipped rather than swept",
+                AssetSweep.merge(List.of("ok", "bad/name", ".dotted")).size()
+                        == AssetSweep.KINDS.size() + 1);
+
+        // The whole path: write the table, read it back, and see the sweep grow.
+        ExportConfig config = ExportConfig.builder().userDir(dir).build();
+        check("nothing is declared to begin with", Uee.declared(config, AssetSweep.TABLE).isEmpty());
+
+        Uee.declare(config, AssetSweep.TABLE, List.of("cutscenes"));
+        check("the declaration is written and read back",
+                Uee.declared(config, AssetSweep.TABLE).equals(List.of("cutscenes")));
+        check("and the sweep covers it",
+                AssetSweep.merge(Uee.declared(config, AssetSweep.TABLE)).contains("cutscenes"));
+
+        // The table is meant to accumulate across packs, so a second declaration adds rather than replaces.
+        List<String> more = new java.util.ArrayList<>(Uee.declared(config, AssetSweep.TABLE));
+        more.add("shaders_extra");
+        java.util.Collections.sort(more);
+        Uee.declare(config, AssetSweep.TABLE, more);
+        check("a second declaration adds", Uee.declared(config, AssetSweep.TABLE).size() == 2);
+
+        // Declaring something else must not disturb it, since the file is shared with the settings and with
+        // every other table.
+        Uee.saveUserState(ExportConfig.builder().userDir(dir).persist(java.util.Set.of("formats")).build());
+        check("another part of the state does not disturb the table",
+                Uee.declared(config, AssetSweep.TABLE).size() == 2);
+        check("and the settings arrived", SettingsMember.textOf(Uee.readUserState(config))
+                .contains("formats"));
+        Uee.declare(config, AssetSweep.TABLE, List.of("cutscenes"));
+        check("writing the table does not disturb the settings",
+                SettingsMember.textOf(Uee.readUserState(config)).contains("formats"));
+
+        // Removing the last one removes the member, so "declared nothing" is one state and not two.
+        Uee.declare(config, AssetSweep.TABLE, List.of());
+        check("an emptied table reads as nothing declared",
+                Uee.declared(config, AssetSweep.TABLE).isEmpty());
+        check("and the settings are still there",
+                SettingsMember.textOf(Uee.readUserState(config)).contains("formats"));
+
+        check("the basis can name a larger total",
+                AssetSweep.describe(12).startsWith("12 kinds"));
+    }
+
     // ---------------------------------------------------------------- copying
 
     /**

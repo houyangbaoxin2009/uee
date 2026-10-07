@@ -1101,9 +1101,14 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
 
         // One listing per declared kind, gathered before any copy so the records come out sorted rather
         // than in whatever order the packs happened to be asked.
+        // The built-in kinds plus whatever the user has declared, which is the point of the declaration
+        // table: a pack that puts content somewhere vanilla does not is otherwise never swept, and the API
+        // offers no way to find out that it did.
+        java.util.List<String> kinds = AssetSweep.merge(declaredAssetKinds(config));
+
         Map<ResourceLocation, net.minecraft.server.packs.resources.Resource> files =
                 new java.util.LinkedHashMap<>();
-        for (String kind : AssetSweep.KINDS) {
+        for (String kind : kinds) {
             try {
                 files.putAll(manager.listResources(AssetSweep.prefixOf(kind), path -> true));
             } catch (Throwable t) {
@@ -1148,6 +1153,27 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
                     "the client resource manager exposed no asset files. A client that has not finished"
                             + " loading its resources has none to give, which is not the same as a pack"
                             + " with no assets"));
+        }
+    }
+
+    /**
+     * The asset kinds the user has declared, or an empty list.
+     *
+     * <p>Read through the configuration the run was given rather than through a fresh one, because the
+     * state file's location is itself configurable. A bare configuration would look in the default place
+     * while the command that wrote the declaration looked wherever the setting said — so a user who moved
+     * the directory would write a declaration that was never read, and the symptom would be a kind that
+     * silently found nothing.
+     *
+     * <p>Failure reads as "nothing declared" rather than propagating: the declared kinds are an addition to
+     * the built-in list and not a replacement for it, so a state file that cannot be read means fewer kinds
+     * swept and never a sweep that does not happen.
+     */
+    private static java.util.List<String> declaredAssetKinds(ExportConfig config) {
+        try {
+            return org.uee.Uee.declared(config, AssetSweep.TABLE);
+        } catch (Throwable t) {
+            return java.util.List.of();
         }
     }
 

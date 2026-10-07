@@ -247,7 +247,11 @@ public final class SmokeTest {
         System.out.println("== assets, over the real pipeline ==");
         int problems = 0;
 
-        ExportConfig assetConfig = base.toBuilder().assets(true).delta(true).build();
+        // A state directory of this run's own. Without it the asset path would read the developer's real
+        // ~/.uee/, and a declaration made on this machine would change what a test on it exports -- which is
+        // the kind of coupling that makes a suite pass here and fail elsewhere.
+        ExportConfig assetConfig = base.toBuilder().assets(true).delta(true)
+                .userDir(root.resolve("state")).build();
         ExportReport first = new Exporter(new FakeAdapter(), assetConfig, root,
                 AnalysisEngine.standard(), catalog).run();
         String summary = first.assetSummary();

@@ -357,6 +357,51 @@ public final class Uee {
     }
 
     /**
+     * Reads the portable state, or an empty one.
+     *
+     * <p>Exposed because a declaration table is read from wherever it is used, and the alternative — every
+     * caller opening the file itself — would be several places that have to agree about which file, which
+     * directory setting and what to do when it is damaged.
+     */
+    public static org.uee.state.UserStore readUserState(ExportConfig config) {
+        return org.uee.state.UserStore.read(userStateFile(config));
+    }
+
+    /** One declaration table, empty when it has never been written. */
+    public static List<String> declared(ExportConfig config, String table) {
+        byte[] payload = readUserState(config).member(org.uee.state.UserStore.TABLE_PREFIX + table);
+        return org.uee.state.DeclarationTable.decode(payload);
+    }
+
+    /**
+     * Replaces one declaration table, leaving every other member alone.
+     *
+     * <p>Other members are carried over because the file holds several kinds of thing: settings, and one
+     * table per declaration. Writing one by rebuilding the file from what this call knows would discard the
+     * rest, which for a store that is the accumulated knowledge of several packs is the worst outcome
+     * available.
+     *
+     * <p>An empty list removes the member rather than storing an empty one, so "declared nothing" and "never
+     * declared" do not become two different states that read the same.
+     *
+     * @return how many names the table now holds
+     */
+    public static int declare(ExportConfig config, String table, List<String> values) throws IOException {
+        Path file = userStateFile(config);
+        org.uee.state.UserStore existing = org.uee.state.UserStore.read(file);
+        java.util.Map<String, byte[]> members = new java.util.LinkedHashMap<>(existing.members());
+        String member = org.uee.state.UserStore.TABLE_PREFIX + table;
+        if (values == null || values.isEmpty()) {
+            members.remove(member);
+            org.uee.state.UserStore.write(file, members);
+            return 0;
+        }
+        members.put(member, org.uee.state.DeclarationTable.encode(values));
+        org.uee.state.UserStore.write(file, members);
+        return values.size();
+    }
+
+    /**
      * Keeps the declared settings in the portable state.
      *
      * <p>Called after a setting is made, so that "declare it once and it sticks" is what actually happens
