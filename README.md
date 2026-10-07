@@ -236,17 +236,19 @@ otherwise "no translations" and "the pack has none" are indistinguishable.
 ★ **每个声明的类目都必有采集器**，由 `categoryTest` 守着——曾经有 9 个类目可选却什么都产不出。
 
 ★★ **声明表**：用户逐个整合包积累的**知识**（如「这个包把资产放在哪些目录」）存在持久化区的
-`table:<名>` 成员里，与设置同文件同容器。★ 第一个用例 = **资产种类**：
-`/uee declare asset-kind <名>` 追加、`no-asset-kind` 移除、`list` 查看。
+`table:<名>` 成员里，与设置同文件同容器。★ 现有两张表：**资产种类**（`/uee declare asset-kind <名>`）与**资产根文件**
+（`/uee declare asset-root-file <名>`），各有 `no-…` 移除动词、`list` 查看、`where` 显示落点。
 ★★ **为什么必须由人声明**：`AssetSweep` 只扫内建 9 个目录，而**资源 API 无法报告包内有什么**
 （空前缀是非法路径且拒绝被吞掉；也没有接口能枚举命名空间）⇒ **唯一知道的是正在看这个包的人**。
-★ 扫描种类 = **内建 ∪ 声明**（内建在前，声明排序追加，去重）。★ **加种类很便宜、漏种类会静默丢文件**
-⇒ 这个不对称正是"可以随意加"的理由。★ 非法名**在声明时就拒绝**（不能变成路径的名会「扫了、没找到」，
-与空目录无法区分）。
+★ 扫描 = **内建 ∪ 声明**（内建在前，声明排序追加，去重；两类各自合并）。★ **加一项很便宜、漏一项会静默
+丢文件** ⇒ 这个不对称正是"可以随意加"的理由。★ 非法名**在声明时就拒绝**（不能变成路径的名会「扫了、
+没找到」，与空目录无法区分）。★★ **刻意只做两张**：只有「工具结构上不可能知道、且有消费者读它」的事实
+才配一张表；**能否决发现的**（如"忽略这些命名空间"）、**游戏格式已定的**（数据侧目录）、
+**本来就没有边界的**（locale）都不该有。
 
 ★★ **Declaration tables** hold what the user establishes about packs, one `table:<name>` member each, in
-the same file and container as the settings. The first use is **asset kinds**: `/uee declare asset-kind`
-adds one. **Why a person has to say it**: the resource API cannot report what a pack contains, so the only
+the same file and container as the settings. There are two: **asset kinds** (`/uee declare asset-kind`)
+and **asset root files** (`/uee declare asset-root-file`). **Why a person has to say it**: the resource API cannot report what a pack contains, so the only
 one who knows is whoever is looking at it. Kinds are the built-ins plus the declared ones, deduped.
 **Adding a kind is cheap and missing one loses files silently**, which is why the list may be extended freely.
 
