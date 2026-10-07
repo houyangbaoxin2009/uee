@@ -136,6 +136,17 @@ public final class Ui {
         }
     }
 
+    /**
+     * The short form of the name, for the prefix on every message.
+     *
+     * <p>The full name is right in a heading and wrong in front of every line: it is long enough that the
+     * sentence after it starts halfway across the screen, and a reader who just ran the command knows which
+     * program is answering. This is the form the command itself uses.
+     */
+    public static String appShortName() {
+        return lookup("uee.app.short");
+    }
+
     /** What a setting did, in the reader's language. */
     public static Component setting(CommandSurface.Setting setting) {
         return t(setting.key(), setting.args());

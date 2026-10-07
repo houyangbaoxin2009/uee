@@ -64,6 +64,7 @@ public final class UiTextTest {
         nothingIsDefinedAndUnused(source);
         theFallbackChain();
         theNameIsTranslated();
+        theLabelledLinesLineUp();
         argumentsAreAlwaysSendable();
         formatting();
 
@@ -154,6 +155,80 @@ public final class UiTextTest {
         check("and so is every value substituted into a sentence",
                 CJK.matcher(UiText.get("zh_cn", "uee.status.analysisOff")).find()
                         && CJK.matcher(UiText.get("zh_cn", "uee.declare.kindWhy")).find());
+    }
+
+    /**
+     * The labelled lines line up: every label occupies the same width, in every language.
+     *
+     * <h2>What this is for</h2>
+     *
+     * <p>These lines are a column of labels and a column of values, and the column only exists if the labels
+     * are the same width. Adding a label of a different length silently breaks the alignment for every line
+     * at once, and nothing else would notice — the entries would all still be defined, used and translated.
+     *
+     * <p>Width is counted in text columns rather than in characters, because that is what a reader sees: a
+     * CJK glyph takes two columns and a Latin character one. That is also why the Chinese labels are padded
+     * with ideographic spaces — padding by character count with ordinary spaces leaves the colons staggered.
+     */
+    private static void theLabelledLinesLineUp() {
+        section("the labelled lines line up");
+
+        // Grouped by the listing they appear in, since two listings need not share a width.
+        java.util.List<java.util.List<String>> groups = java.util.List.of(
+                java.util.List.of("uee.status.settings", "uee.status.categories", "uee.status.output",
+                        "uee.status.configLine", "uee.status.language"),
+                java.util.List.of("uee.export.dataLoc", "uee.export.analysisLoc"));
+
+        for (String locale : UiText.availableLocales()) {
+            for (java.util.List<String> group : groups) {
+                java.util.Set<Integer> widths = new java.util.LinkedHashSet<>();
+                StringBuilder seen = new StringBuilder();
+                for (String key : group) {
+                    String entry = UiText.get(locale, key);
+                    // Everything up to the first placeholder, or the whole entry when there is none: that is
+                    // the label and its padding.
+                    int cut = entry.indexOf("%s");
+                    String label = cut < 0 ? entry : entry.substring(0, cut);
+                    widths.add(columns(label));
+                    seen.append('[').append(label).append('=').append(columns(label)).append(']');
+                }
+                check(locale + " labels share a width: " + seen, widths.size() == 1);
+            }
+        }
+
+        // And the padding is real: an entry with a shorter label has to carry the filler, or the check above
+        // would pass on a group that had been made uniform by making every label short.
+        check("the short label is padded to match",
+                columns(labelOf("zh_cn", "uee.status.settings"))
+                        == columns(labelOf("zh_cn", "uee.status.categories")));
+        check("with ideographic spaces rather than ordinary ones, so CJK aligns",
+                UiText.get("zh_cn", "uee.status.settings").indexOf('\u3000') > 0);
+    }
+
+    /** The label part of an entry: up to the first placeholder, or the whole entry. */
+    private static String labelOf(String locale, String key) {
+        String entry = UiText.get(locale, key);
+        int cut = entry.indexOf("%s");
+        return cut < 0 ? entry : entry.substring(0, cut);
+    }
+
+    /**
+     * The width of a string in text columns: a full-width character takes two, anything else one.
+     *
+     * <p>The ranges are the ones a game font widens: CJK ideographs, kana, hangul, and the full-width forms
+     * of Latin punctuation.
+     */
+    private static int columns(String text) {
+        int width = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            boolean wide = (c >= '\u1100' && c <= '\u115f') || (c >= '\u2e80' && c <= '\ua4cf')
+                    || (c >= '\uac00' && c <= '\ud7a3') || (c >= '\uf900' && c <= '\ufaff')
+                    || (c >= '\ufe30' && c <= '\ufe6f') || (c >= '\uff00' && c <= '\uff60')
+                    || (c >= '\u3000' && c <= '\u303f');
+            width += wide ? 2 : 1;
+        }
+        return width;
     }
 
     // ---------------------------------------------------------------- keys versus code

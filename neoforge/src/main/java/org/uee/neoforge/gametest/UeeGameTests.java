@@ -760,6 +760,23 @@ public final class UeeGameTests {
         // And the action that caused it must not be the one we use, since it is the only one the codec
         // refuses -- recorded as an assertion so that a future change back to it fails here rather than in
         // someone's chat box.
+        // The directory link has to obey the same rule, and it is the one that would be tempting to break:
+        // opening a folder is OPEN_FILE, which is exactly what cannot be sent, so the action is chosen by
+        // asking rather than by wanting.
+        net.minecraft.network.chat.ClickEvent.Action folder = UeeCommand.folderAction();
+        helper.assertTrue(folder != null,
+                "no click action is permitted for a directory, so locations carry no interaction");
+        helper.assertTrue(folder.isAllowedFromServer(),
+                "the directory action would make every message that carries a location unsendable: " + folder);
+        // And the hover text is chosen from the same question, so it cannot promise to open a folder that a
+        // click will only copy.
+        helper.assertTrue(UeeCommand.folderHoverKey() != null,
+                "a directory link has no description of what it does");
+        helper.assertTrue((folder == net.minecraft.network.chat.ClickEvent.Action.OPEN_FILE)
+                        == UeeCommand.folderHoverKey().equals("uee.hover.openFolder"),
+                "the hover text and the action disagree about what a click does: " + folder + " / "
+                        + UeeCommand.folderHoverKey());
+
         helper.assertTrue(!net.minecraft.network.chat.ClickEvent.Action.OPEN_FILE.isAllowedFromServer(),
                 "OPEN_FILE is now permitted, so the note explaining why it is avoided is out of date");
 

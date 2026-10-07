@@ -591,14 +591,14 @@ public final class UeeCommand {
         return 0;
     }
 
-    /** Emits clickable paths, so the output can be opened without retyping them. */
+    /** Emits the locations, clickable to open the folder where the platform allows that. */
     private static void showLocations(CommandSourceStack source, Path root, ExportConfig config) {
         source.sendSuccess(() -> org.uee.mc.Ui.t("uee.export.dataLoc").copy()
-                .append(link(source, root)), false);
+                .append(folderLink(source, root)), false);
         if (config.analyze() && config.analysisSeparate()) {
             Path analysis = org.uee.pipeline.Exporter.analysisDir(root);
             source.sendSuccess(() -> org.uee.mc.Ui.t("uee.export.analysisLoc").copy()
-                    .append(link(source, analysis)), false);
+                    .append(folderLink(source, analysis)), false);
         }
     }
 
@@ -630,6 +630,35 @@ public final class UeeCommand {
     }
 
     /**
+     * The action for a directory, which is to open it wherever the platform allows that.
+     *
+     * <h2>Why this is not simply "open the folder"</h2>
+     *
+     * <p>Opening a local folder is {@code OPEN_FILE}, and that is the one action the chat codec refuses to
+     * serialise for a server — the refusal takes the whole message with it, which is how a status readout
+     * once became a complaint about chat. The obvious alternative, {@code OPEN_URL} with a {@code file:}
+     * URI, is refused by the client instead: its allowed protocols are http and https, so a local path is
+     * rejected before anything would open.
+     *
+     * <p>So the platform is asked rather than assumed, and the answer differs: some loaders permit
+     * {@code OPEN_FILE} when the server is the player's own, and there a click opens the folder. Where it is
+     * not permitted a click copies the path instead — which still gets the reader there, in two steps, and
+     * unlike the other option always arrives.
+     */
+    public static ClickEvent.Action folderAction() {
+        if (ClickEvent.Action.OPEN_FILE.isAllowedFromServer()) {
+            return ClickEvent.Action.OPEN_FILE;
+        }
+        return pathAction();
+    }
+
+    /** What a click on a directory will do, so the hover text and the action cannot disagree. */
+    public static String folderHoverKey() {
+        return ClickEvent.Action.OPEN_FILE.isAllowedFromServer()
+                ? "uee.hover.openFolder" : "uee.hover.copyPath";
+    }
+
+    /**
      * A path, clickable when there is a client to click it and an action that may be used.
      *
      * <p>A function has no player behind it, and a console or the server log has nothing to click. In
@@ -643,7 +672,7 @@ public final class UeeCommand {
      * a translator never sees the program's name as something to translate.
      */
     static Component line(String key, Object... args) {
-        return Component.literal(org.uee.mc.Ui.appName() + ": ")
+        return Component.literal(org.uee.mc.Ui.appShortName() + ": ")
                 .append(org.uee.mc.Ui.t(key, args));
     }
 
@@ -678,24 +707,35 @@ public final class UeeCommand {
     }
 
     private static Component link(CommandSourceStack source, Path path) {
+        return clickable(source, path, pathAction(), "uee.hover.copyPath");
+    }
+
+    /** A directory, clickable to open it or to copy its path, whichever the platform allows. */
+    private static Component folderLink(CommandSourceStack source, Path path) {
+        return clickable(source, path, folderAction(), folderHoverKey());
+    }
+
+    /**
+     * A path as clickable text, with the action and the description of it chosen by the caller.
+     *
+     * <p>Marked with a colour and an underline, because without them the path looks like every other path in
+     * the output and the interaction is only found by hovering everything.
+     *
+     * <p>The hover text is passed in rather than decided here, so that what it promises and what the click
+     * does come from the same question rather than from two answers that could differ.
+     */
+    private static Component clickable(CommandSourceStack source, Path path,
+            ClickEvent.Action action, String hoverKey) {
         String text = path.toAbsolutePath().toString();
-        // MutableComponent, not Component: the interface has no withStyle, and literal() already
-        // returns something that does.
-        net.minecraft.network.chat.MutableComponent base = Component.literal(text);
-        ClickEvent.Action action = pathAction();
         if (source.getEntity() == null || action == null) {
-            return base;
+            return Component.literal(text);
         }
-        return base.withStyle(
-                // Marked so a reader can tell there is something to click: without it the path looks like
-                // every other path in the output and the interaction is only found by hovering everything.
-                net.minecraft.ChatFormatting.AQUA, net.minecraft.ChatFormatting.UNDERLINE)
+        return Component.literal(text)
+                .withStyle(net.minecraft.ChatFormatting.AQUA, net.minecraft.ChatFormatting.UNDERLINE)
                 .withStyle(style -> style
-                .withClickEvent(new ClickEvent(action, text))
-                // The hover says what the click does. It used to say "open / 打开" for a click that has
-                // never been able to open anything, since the action was refused everywhere it mattered.
-                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                        org.uee.mc.Ui.t("uee.hover.copy"))));
+                        .withClickEvent(new ClickEvent(action, text))
+                        .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                                org.uee.mc.Ui.t(hoverKey))));
     }
 
     /**
@@ -762,9 +802,12 @@ public final class UeeCommand {
         try {
             ConfigResolver.Resolved r = Uee.resolveForRun(ConfigFile.empty());
             ExportConfig c = r.config();
-            detail(source, "uee.status.export", String.join(", ", c.formats()),
-                    c.kinds().size(), analysisState(c));
-            detail(source, "uee.status.output", c.outputDir());
+            detail(source, "uee.status.settings", String.join(", ", c.formats()), analysisState(c));
+            detail(source, "uee.status.categories", c.kinds().size());
+            // The output directory is the one path whose useful action is to open it, so it is the one
+            // path that gets the directory treatment rather than the copy treatment.
+            source.sendSuccess(() -> org.uee.mc.Ui.t("uee.status.output", "").copy()
+                    .append(folderLink(source, c.outputDir())), false);
             for (String warning : r.warnings()) {
                 detail(source, "uee.status.warning", warning);
             }
