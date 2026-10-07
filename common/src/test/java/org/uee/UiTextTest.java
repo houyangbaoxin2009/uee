@@ -53,7 +53,10 @@ public final class UiTextTest {
 
     private static final Pattern KEY = Pattern.compile(
             "\"(uee\\.(?:set|err|cmd|status|export|job|jobs|kinds|formats|config|declare|asset"
-                    + "|help|flow|datapack|globalpack|target|strategy|finding|hover|app|analysis)\\.[A-Za-z0-9_.]+)\"");
+                    // Hyphens belong in the trailing class: check ids are hyphenated, so without it
+                    // half the check descriptions would be invisible to this scan and reported as unused.
+                    + "|help|flow|datapack|globalpack|target|strategy|finding|hover|app|analysis|check|report)"
+                    + "\\.[A-Za-z0-9_.\\-]+)\"");
 
     public static void main(String[] args) throws IOException {
         Path root = Path.of(args.length > 0 ? args[0] : "build/ui-text-test");
@@ -65,6 +68,7 @@ public final class UiTextTest {
         theFallbackChain();
         theNameIsTranslated();
         theLabelledLinesLineUp();
+        noEntryCarriesABackslash();
         theSectionHeadingsAreOneWidth();
         argumentsAreAlwaysSendable();
         formatting();
@@ -246,6 +250,33 @@ public final class UiTextTest {
                 check(locale + " names " + key + " within the heading width",
                         UiText.columns(UiText.get(locale, key)) < target);
             }
+        }
+    }
+
+    /**
+     * No entry contains a backslash.
+     *
+     * <h2>Why this exists</h2>
+     *
+     * <p>A newline or a tab written into a catalogue value arrives as the two characters a backslash and a
+     * letter, because a script that writes the file eats the escape on the way through. That has happened
+     * twice in one sitting: a message was rendered with a visible backslash-n in the middle, and one of the
+     * catalogue files itself was left unparseable by a trailing one. Nothing else notices, because the entry
+     * is defined, used and translated.
+     *
+     * <p>So the rule is simply that no value needs a backslash. Anything that wants a line break is two
+     * entries and two lines, which is also what a reader wants to see.
+     */
+    private static void noEntryCarriesABackslash() {
+        section("no entry carries a backslash");
+
+        for (String locale : UiText.availableLocales()) {
+            java.util.List<String> offenders = UiText.catalog(locale).entrySet().stream()
+                    .filter(e -> e.getValue().indexOf('\\') >= 0)
+                    .map(e -> e.getKey() + "=" + e.getValue())
+                    .sorted().toList();
+            check(locale + " has no entry containing a backslash" + (offenders.isEmpty()
+                    ? "" : ": " + offenders), offenders.isEmpty());
         }
     }
 

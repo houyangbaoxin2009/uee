@@ -136,6 +136,24 @@ public final class ExportConfig {
      * changed from the surface that made it, has no way back.
      */
     private final Set<String> persist;
+
+    /**
+     * Which checks to run, empty meaning all of them.
+     *
+     * <p>A pack author looking into one kind of problem wants that kind and not the other six: a report of
+     * everything, read again to find the two lines that matter, is how a diagnostic stops being used.
+     */
+    private final Set<String> checks;
+
+    /**
+     * What the analysis command returns as its result code.
+     *
+     * <p>Configurable because two callers want different things from the same run: a person reading the
+     * output wants to know how much was found, and a function calling this wants a number it can test, for
+     * which the count of errors is the useful one and the count of observations is noise. The default is
+     * the errors, since a result code that fails on a hint is a result code nobody can gate on.
+     */
+    private final String analysisResult;
     private final Set<String> excludeTags;
     private final long maxFileBytes;
     private final boolean datapacks;
@@ -172,6 +190,8 @@ public final class ExportConfig {
         this.assets = b.assets;
         this.userDir = b.userDir;
         this.persist = b.persist == null ? Set.of() : Set.copyOf(b.persist);
+        this.checks = b.checks == null ? Set.of() : Set.copyOf(b.checks);
+        this.analysisResult = b.analysisResult == null ? RESULTS_ERRORS : b.analysisResult;
         this.autoRun = b.autoRun;
         this.language = b.language;
         this.includeTags = Collections.unmodifiableSet(new LinkedHashSet<>(b.includeTags));
@@ -337,6 +357,32 @@ public final class ExportConfig {
     /** Which settings are kept between runs and between instances. */
     public Set<String> persist() {
         return persist;
+    }
+
+    /** Which checks to run; empty means all of them. */
+    public Set<String> checks() {
+        return checks;
+    }
+
+    /** What the analysis command counts to produce its result code. */
+    public String analysisResult() {
+        return analysisResult;
+    }
+
+    /** The result code counts errors, which is what a caller can gate on. */
+    public static final String RESULTS_ERRORS = "errors";
+
+    /** The result code counts everything found. */
+    public static final String RESULTS_FINDINGS = "findings";
+
+    /**
+     * The recognised values of {@link #analysisResult()}, for validating one that arrived as text.
+     *
+     * <p>Kept here rather than in the command layer so that a value from a config file and a value from a
+     * command are judged by the same rule, and so that the judgement can be checked without a game.
+     */
+    public static boolean isKnownResult(String name) {
+        return RESULTS_ERRORS.equals(name) || RESULTS_FINDINGS.equals(name);
     }
 
     /** Whether to export as soon as a game has started, without being asked. */
@@ -520,6 +566,8 @@ public final class ExportConfig {
         b.assets = assets;
         b.userDir = userDir;
         b.persist = persist;
+        b.checks = new LinkedHashSet<>(checks);
+        b.analysisResult = analysisResult;
         b.autoRun = autoRun;
         b.language = language;
         b.includeTags = new LinkedHashSet<>(includeTags);
@@ -598,6 +646,8 @@ public final class ExportConfig {
         private boolean assets = false;
         private Path userDir;
         private Set<String> persist = Set.of();
+        private Set<String> checks = Set.of();
+        private String analysisResult = RESULTS_ERRORS;
         private boolean autoRun = false;
         private String language;
         private Set<String> includeTags = new LinkedHashSet<>();
@@ -721,6 +771,19 @@ public final class ExportConfig {
         }
 
         /** Declares which settings are kept between runs. */
+        public Builder checks(Set<String> ids) {
+            this.checks = ids == null ? Set.of() : ids;
+            return this;
+        }
+
+        public Builder analysisResult(String value) {
+            if (value != null && !isKnownResult(value)) {
+                throw new IllegalArgumentException("unknown analysis result: " + value);
+            }
+            this.analysisResult = value == null ? RESULTS_ERRORS : value;
+            return this;
+        }
+
         public Builder persist(Set<String> keys) {
             this.persist = keys == null ? Set.of() : keys;
             return this;

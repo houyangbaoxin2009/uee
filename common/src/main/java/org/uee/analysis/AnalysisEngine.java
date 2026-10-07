@@ -49,6 +49,40 @@ public final class AnalysisEngine {
         return new AnalysisEngine(List.of());
     }
 
+    /**
+     * The standard set narrowed to the named checks.
+     *
+     * <p>Not a separate path: the same list, filtered, so a selected run and a full run cannot drift apart
+     * in how a check behaves — only in which ones are present. Naming nothing keeps the whole set, because a
+     * filter that matches nothing when nothing was asked for would make an empty selection mean "run
+     * none", which is a trap rather than a feature.
+     *
+     * <p>Names that are not checks are ignored here on purpose; deciding what to say about them belongs to
+     * the surface that accepted them, which is the only place that knows what the reader typed.
+     */
+    public static AnalysisEngine named(java.util.Collection<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return standard();
+        }
+        java.util.Set<String> wanted = new java.util.LinkedHashSet<>(ids);
+        List<Analysis> selected = new ArrayList<>(wanted.size());
+        for (Analysis a : standard().analyses()) {
+            if (wanted.contains(a.id())) {
+                selected.add(a);
+            }
+        }
+        return of(selected);
+    }
+
+    /** Every check id the standard set offers, in run order. */
+    public static List<String> knownIds() {
+        List<String> ids = new ArrayList<>(8);
+        for (Analysis a : standard().analyses()) {
+            ids.add(a.id());
+        }
+        return ids;
+    }
+
     /** An engine with a caller-supplied set, for tests and for selective runs. */
     public static AnalysisEngine of(List<Analysis> analyses) {
         return new AnalysisEngine(analyses);

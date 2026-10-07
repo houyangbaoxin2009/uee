@@ -308,6 +308,17 @@ public final class UeeCommand {
                 // Analyse without exporting: answers "what is wrong with this instance" cheaply.
                 .then(Commands.literal("analyze")
                         .executes(ctx -> analyzeWithPolicy(ctx.getSource())))
+                // What the checks are called, which is the one thing a reader needs to select any of them.
+                .then(Commands.literal("checks")
+                        .executes(ctx -> listChecks(ctx.getSource())))
+                // The same run, narrowed. Named rather than numbered, because the names are stable and the
+                // order is not.
+                .then(Commands.literal("check")
+                        .then(Commands.argument("names", StringArgumentType.greedyString())
+                                .executes(ctx -> analyzeNamed(ctx.getSource(), arg(ctx, "names")))))
+                // Findings as a file, for reading outside the game and for comparing two runs.
+                .then(Commands.literal("report")
+                        .executes(ctx -> writeReport(ctx.getSource())))
 
                 // The two halves of a run, each on its own.
                 .then(Commands.literal("data").executes(ctx -> runAsync(ctx.getSource(),
@@ -870,7 +881,123 @@ public final class UeeCommand {
             int remaining = findings.size() - FINDINGS_SHOWN;
             detail(source, "uee.status.more", remaining);
         }
-        return findings.size();
+        // What the command returns is configured rather than assumed, and defaults to the errors. A caller
+        // storing the result wants a number it can test, and a code that fails on an observation is one
+        // nobody can gate on; a reader wants the total, and can ask for it.
+        return resultCode(findings);
+    }
+
+    /** The result code this run's configuration asks for. */
+    private static int resultCode(List<Finding> findings) {
+        String wanted;
+        try {
+            wanted = Uee.resolveForRun(ConfigFile.empty()).config().analysisResult();
+        } catch (IOException | IllegalStateException e) {
+            wanted = ExportConfig.RESULTS_ERRORS;
+        }
+        if (ExportConfig.RESULTS_FINDINGS.equals(wanted)) {
+            return findings.size();
+        }
+        return (int) findings.stream().filter(Finding::isError).count();
+    }
+
+    /** Lists the checks, their stage and what they look at. */
+    private static int listChecks(CommandSourceStack source) {
+        for (org.uee.analysis.Analysis check : Uee.checksFor(List.of())) {
+            // The description key comes from a table of literals rather than from the id, so that the scan
+            // for used keys can see it -- and so that a check without a description is a thing the tests
+            // report rather than a raw key a reader is shown.
+            String described = org.uee.analysis.CheckCatalogue.keyFor(check.id());
+            // Two lines rather than one with a newline inside it: a newline in a catalogue value is an
+            // escape waiting to be eaten by whatever writes the file, and it has been eaten twice here.
+            detail(source, "uee.check.line", check.id(),
+                    org.uee.mc.Ui.lookup(check.stage() == org.uee.analysis.Analysis.Stage.PRE_COLLECTION
+                            ? "uee.check.stageBefore" : "uee.check.stageAfter"));
+            detail(source, "uee.check.description",
+                    described == null ? check.description() : org.uee.mc.Ui.lookup(described));
+        }
+        detail(source, "uee.check.note");
+        return Uee.checksFor(List.of()).size();
+    }
+
+    /**
+     * Runs only the named checks.
+     *
+     * <p>Unknown names are refused with the list of real ones rather than ignored: a selection that quietly
+     * ran nothing, or ran everything, would look like a clean result.
+     */
+    private static int analyzeNamed(CommandSourceStack source, String names) {
+        if (Uee.adapter() == null) {
+            refuse(source, "uee.cmd.noAdapter");
+            return 0;
+        }
+        List<String> wanted = new ArrayList<>(4);
+        for (String token : names.split("[,\\s]+")) {
+            String name = token.trim().toLowerCase(java.util.Locale.ROOT);
+            if (!name.isEmpty()) {
+                wanted.add(name);
+            }
+        }
+        List<String> known = org.uee.analysis.AnalysisEngine.knownIds();
+        for (String name : wanted) {
+            if (!known.contains(name)) {
+                refuse(source, "uee.check.unknown", name, String.join(", ", known));
+                return 0;
+            }
+        }
+        if (wanted.isEmpty()) {
+            refuse(source, "uee.check.noneGiven", String.join(", ", known));
+            return 0;
+        }
+        List<Finding> findings = new ArrayList<>(16);
+        try {
+            Uee.analyzeWithoutCollecting(findings::add, wanted);
+        } catch (Throwable t) {
+            refuse(source, "uee.status.analysisFailed", t);
+            return 0;
+        }
+        showFindings(source, findings);
+        return resultCode(findings);
+    }
+
+    /** Writes the findings to a file and reports where. */
+    private static int writeReport(CommandSourceStack source) {
+        if (Uee.adapter() == null) {
+            refuse(source, "uee.cmd.noAdapter");
+            return 0;
+        }
+        List<Finding> findings = new ArrayList<>(16);
+        try {
+            ExportConfig config = Uee.resolveForRun(ConfigFile.empty()).config();
+            List<String> selected = new ArrayList<>(config.checks());
+            Uee.analyzeWithoutCollecting(findings::add, selected);
+            Path file = Uee.writeReport(config, findings, selected);
+            long size = Files.size(file);
+            String path = file.toAbsolutePath().toString();
+            report(source, org.uee.mc.Ui.format("uee.report.wrote", path, Long.toString(size),
+                    Integer.toString(findings.size())));
+        } catch (Throwable t) {
+            refuse(source, "uee.report.failed", t);
+            return 0;
+        }
+        return resultCode(findings);
+    }
+
+    /** The shared presentation of findings, so both entry points print them the same way. */
+    private static void showFindings(CommandSourceStack source, List<Finding> findings) {
+        if (findings.isEmpty()) {
+            tell(source, "uee.status.nothingFound");
+            return;
+        }
+        int errors = (int) findings.stream().filter(Finding::isError).count();
+        tell(source, "uee.status.findings", findings.size(), errors);
+        findings.stream()
+                .sorted(Comparator.comparing(f -> f.severity().ordinal()))
+                .limit(FINDINGS_SHOWN)
+                .forEach(f -> detail(source, "uee.finding.entry", f.severity().token(), f.message()));
+        if (findings.size() > FINDINGS_SHOWN) {
+            detail(source, "uee.status.more", findings.size() - FINDINGS_SHOWN);
+        }
     }
 
     private static int status(CommandSourceStack source) {

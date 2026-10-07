@@ -208,5 +208,21 @@
   "uee.help.bare": "  %s                      export with the default settings",
   "uee.help.bareAnalysis": "  %s                      export the analysis half alone",
   "uee.status.analysisInOwnPackage": "separate (UEEA)",
-  "uee.status.analysisBundled": "bundled"
+  "uee.status.analysisBundled": "bundled",
+  "uee.check.stageBefore": "before collection: reads loader metadata only",
+  "uee.check.stageAfter": "after collection: reads what was collected",
+  "uee.check.line": "  %s  ·  %s",
+  "uee.check.note": "checks run in this order; name one or more to run a subset",
+  "uee.check.unknown": "%s is not a check; known: %s",
+  "uee.check.noneGiven": "no check named; known: %s",
+  "uee.report.wrote": "wrote the report to %s (%s bytes, %s findings)",
+  "uee.report.failed": "could not write the report: %s",
+  "uee.check.containers": "containers that could not be read, and containers unusually large for a mod",
+  "uee.check.coverage": "what collection produced per category and namespace, and what the filter dropped",
+  "uee.check.dependency-graph": "missing requirements, declared incompatibilities, duplicate ids",
+  "uee.check.compatibility": "out-of-range versions, requiring cycles, jars built for another loader or game",
+  "uee.check.mixins": "which classes each mod patches, and targets patched by more than one mod",
+  "uee.check.namespace-claims": "namespaces mods claim, and namespaces claimed by more than one mod",
+  "uee.check.orphan-namespaces": "namespaces present in the registries that no loaded mod claims",
+  "uee.check.description": "      %s"
 }

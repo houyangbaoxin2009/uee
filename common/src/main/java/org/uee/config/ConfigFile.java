@@ -60,6 +60,7 @@ public final class ConfigFile {
     public static final String[] KNOWN_KEYS = {
             "output", "package", "formats", "kinds",
             "analyze", "analysis_separate", "package_per_kind", "quiet",
+            "checks", "analysis_result",
             "fields", "exclude_fields", "dry_run", "delta", "assets", "user_dir", "persist", "auto_run", "language",
             "include_tags", "exclude_tags",
             "max_file_mb",
@@ -98,6 +99,8 @@ public final class ConfigFile {
 
     /** The keys the file asks to be kept; null when it says nothing. */
     private final Set<String> persist;
+    private final Set<String> checks;
+    private final String analysisResult;
     private final Set<String> excludeTags;
     private final Integer maxFileMb;
     private final Boolean icons;
@@ -142,6 +145,8 @@ public final class ConfigFile {
         this.assets = b.assets;
         this.userDir = b.userDir;
         this.persist = b.persist;
+        this.checks = b.checks;
+        this.analysisResult = b.analysisResult;
         this.autoRun = b.autoRun;
         this.language = b.language;
         this.includeTags = b.includeTags;
@@ -239,6 +244,12 @@ public final class ConfigFile {
         if (analyze != null) {
             keys.add("analyze");
         }
+        if (checks != null) {
+            keys.add("checks");
+        }
+        if (analysisResult != null) {
+            keys.add("analysis_result");
+        }
         if (analysisSeparate != null) {
             keys.add("analysis_separate");
         }
@@ -335,6 +346,7 @@ public final class ConfigFile {
         }
         return output == null && packageName == null && formats == null && kinds == null
                 && analyze == null && analysisSeparate == null && packagePerKind == null
+                && checks == null && analysisResult == null
                 && quiet == null && (fields == null || fields.isAll()) && dryRun == null
                 && includeTags == null && excludeTags == null && maxFileMb == null
                 && icons == null && pretty == null && includePaths == null
@@ -369,6 +381,12 @@ public final class ConfigFile {
         }
         if (analyze != null) {
             b.analyze(analyze);
+        }
+        if (checks != null) {
+            b.checks(checks);
+        }
+        if (analysisResult != null) {
+            b.analysisResult(analysisResult);
         }
         if (analysisSeparate != null) {
             b.analysisSeparate(analysisSeparate);
@@ -553,6 +571,10 @@ public final class ConfigFile {
                     b.kinds = kinds;
                 }
                 case "analyze" -> b.analyze = value.asBool();
+                // Ordered by name for the reader; the engine keeps its own run order, which is a different
+                // question from the order they were written in.
+                case "checks" -> b.checks = new LinkedHashSet<>(strings(value));
+                case "analysis_result" -> b.analysisResult = value.asString();
                 case "analysis_separate" -> b.analysisSeparate = value.asBool();
                 case "package_per_kind" -> b.packagePerKind = value.asBool();
                 case "quiet" -> b.quiet = value.asBool();
@@ -635,6 +657,8 @@ public final class ConfigFile {
         b.put("formats", stringList(config.formats()));
         b.put("kinds", kindList(config.kinds()));
         b.put("analyze", TdValue.of(config.analyze()));
+        b.put("checks", stringList(config.checks()));
+        b.put("analysis_result", config.analysisResult());
         b.put("analysis_separate", TdValue.of(config.analysisSeparate()));
         b.put("package_per_kind", TdValue.of(config.packagePerKind()));
         b.put("icons", TdValue.of(config.icons()));
@@ -914,6 +938,14 @@ public final class ConfigFile {
                 memory_limit_mb = 256
                 threads = 0                     // 并发度，0 = 自动 / worker threads, 0 = auto
 
+                // ─── 分析检查 / analysis checks ─────────────────────────────────────
+                // 空 = 全部检查；可用 /ueea checks 列出全部名称。
+                // Empty = every check; /ueea checks lists the names.
+                checks = []
+                // 分析命令的返回码取什么：errors（默认，错误数）或 findings（发现总数）。
+                // What the analysis command returns: errors (default) or findings.
+                analysis_result = "errors"
+
                 // ─── 过滤 / filters ────────────────────────────────────────────────
                 // include 为空 = 全部；exclude 优先 / empty include means all; exclude wins
                 include_namespaces = []
@@ -1089,6 +1121,8 @@ public final class ConfigFile {
         v.put("formats", list(config.formats()));
         v.put("kinds", kindListText(config.kinds()));
         v.put("analyze", Boolean.toString(config.analyze()));
+        v.put("checks", list(config.checks()));
+        v.put("analysis_result", quote(config.analysisResult()));
         v.put("analysis_separate", Boolean.toString(config.analysisSeparate()));
         v.put("package_per_kind", Boolean.toString(config.packagePerKind()));
         v.put("quiet", Boolean.toString(config.quiet()));
@@ -1197,6 +1231,12 @@ public final class ConfigFile {
         private Boolean assets;
         private Path userDir;
         private Set<String> persist;
+
+        /** Which checks to run; null means the file said nothing and every check runs. */
+        private Set<String> checks;
+
+        /** What the analysis command counts; null means the default, which is the errors. */
+        private String analysisResult;
         private Boolean autoRun;
         private String language;
         private Set<String> includeTags;

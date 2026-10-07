@@ -3,8 +3,12 @@ package org.uee;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.function.Consumer;
+import org.uee.analysis.Analysis;
 import org.uee.analysis.AnalysisContext;
 import org.uee.analysis.AnalysisEngine;
 import org.uee.analysis.Finding;
@@ -667,11 +671,88 @@ public final class Uee {
      * @return how many were produced
      */
     public static int analyzeWithoutCollecting(Consumer<Finding> sink) throws IOException {
+        return analyzeWithoutCollecting(sink, List.of());
+    }
+
+    /**
+     * The same, running only the named checks.
+     *
+     * @param checks the check ids to run; empty means every check
+     */
+    public static int analyzeWithoutCollecting(Consumer<Finding> sink, Collection<String> checks)
+            throws IOException {
         LoaderAdapter current = requireAdapter();
         AnalysisContext context = new AnalysisContext(current.mods(), current.containers(),
                 current.mixinConfigs(), false, current.info().loader(),
                 current.info().minecraftVersion());
-        return AnalysisEngine.standard().runWithoutCollection(context, sink::accept);
+        return AnalysisEngine.named(checks).runWithoutCollection(context, sink::accept);
+    }
+
+    /** The checks this run would perform, so a surface can list them without running anything. */
+    public static List<Analysis> checksFor(Collection<String> selected) {
+        return AnalysisEngine.named(selected).analyses();
+    }
+
+    /**
+     * Writes findings to a file, for reading outside the game.
+     *
+     * <p>Both formats at once, because they are read differently: the text one is for a person, and the
+     * tab-separated one is for whatever they want to do with it afterwards. One file with two sections
+     * rather than two files, so that a reader cannot end up holding the half they did not want.
+     *
+     * <p>The heading of each section says which checks ran and what was running, because a findings file
+     * with no context is a list of complaints against an unknown pack.
+     *
+     * @return the file written
+     */
+    public static Path writeReport(ExportConfig config, List<Finding> findings,
+            Collection<String> checks) throws IOException {
+        LoaderAdapter current = requireAdapter();
+        Path dir = config.analyze() && config.analysisSeparate()
+                ? org.uee.pipeline.Exporter.analysisDir(config.outputDir()) : config.outputDir();
+        Files.createDirectories(dir);
+        Path file = dir.resolve("report.txt");
+
+        StringBuilder text = new StringBuilder(4096);
+        text.append("run:        ").append(Uee.MOD_ID).append(' ').append(modVersion()).append('\n');
+        if (current.info() != null) {
+            text.append("loader:     ").append(current.info().loader()).append(' ')
+                    .append(current.info().loaderVersion()).append('\n');
+            text.append("minecraft:  ").append(current.info().minecraftVersion()).append('\n');
+        }
+        text.append("mods:       ").append(current.mods().size()).append('\n');
+        text.append("checks:     ").append(checks == null || checks.isEmpty()
+                ? "all" : String.join(", ", checks)).append('\n');
+        text.append("findings:   ").append(findings.size()).append('\n');
+        long errors = findings.stream().filter(Finding::isError).count();
+        text.append("errors:     ").append(errors).append('\n');
+        text.append('\n');
+
+        // Worst first, then by subject within a severity, so two runs of the same pack produce the same
+        // order and a diff between them is readable.
+        List<Finding> ordered = new ArrayList<>(findings);
+        ordered.sort(Comparator.comparingInt((Finding f) -> f.severity().ordinal())
+                .thenComparing(Finding::kind).thenComparing(Finding::subject));
+        for (Finding f : ordered) {
+            text.append(f.severity().token()).append("  ").append(f.kind())
+                    .append("  ").append(f.subject()).append('\n');
+            text.append("    ").append(f.message()).append('\n');
+            String[] detail = f.detail();
+            for (int i = 0; i + 1 < detail.length; i += 2) {
+                text.append("    ").append(detail[i]).append(" = ").append(detail[i + 1]).append('\n');
+            }
+        }
+
+        // The same content again, one finding per line, for anything that would rather parse than read.
+        text.append('\n').append("# kind\tseverity\tsubject\tmessage\n");
+        for (Finding f : ordered) {
+            text.append(f.kind()).append('\t').append(f.severity().token()).append('\t')
+                    .append(f.subject().replace('\t', ' ')).append('\t')
+                    .append(f.message().replace('\t', ' ')).append('\n');
+        }
+
+        Files.writeString(file, text.toString());
+        return file;
     }
 
     /** Resolves the category tokens a command line used. */

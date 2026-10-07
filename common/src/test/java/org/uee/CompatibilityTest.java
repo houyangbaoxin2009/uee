@@ -36,6 +36,7 @@ public final class CompatibilityTest {
         rangesOutOfRange();
         requiringCycles();
         builtForSomethingElse();
+        everyCheckIsDescribed();
 
         System.out.println();
         System.out.println(failures == 0 ? "ALL CHECKS PASSED" : failures + " CHECK(S) FAILED");
@@ -254,6 +255,57 @@ public final class CompatibilityTest {
         check("nothing running means nothing claimed",
                 run(mods, null, null).stream()
                         .noneMatch(f -> f.kind().startsWith("built_for_")));
+    }
+
+    /**
+     * Every check has a description, and every description belongs to a check.
+     *
+     * <p>The descriptions are looked up by key, and the keys are written as literals in one table so that
+     * both directions can be checked. Deriving them from the id would have made a missing description
+     * invisible — a check would be listed under a raw key and nothing would report it.
+     */
+    private static void everyCheckIsDescribed() {
+        section("every check is described");
+
+        java.util.List<String> known = AnalysisEngine.knownIds();
+        check("the engine offers checks at all", !known.isEmpty());
+
+        java.util.List<String> missing = new java.util.ArrayList<>();
+        java.util.List<String> keyless = new java.util.ArrayList<>();
+        for (String id : known) {
+            if (org.uee.analysis.CheckCatalogue.keyFor(id) == null) {
+                missing.add(id);
+            }
+        }
+        for (String id : org.uee.analysis.CheckCatalogue.described()) {
+            if (!known.contains(id)) {
+                keyless.add(id);
+            }
+        }
+        check("every check has a description" + (missing.isEmpty() ? "" : ": " + missing),
+                missing.isEmpty());
+        check("and every description belongs to a check" + (keyless.isEmpty() ? "" : ": " + keyless),
+                keyless.isEmpty());
+
+        // And the descriptions are actually translatable, which is the thing a raw key would fail.
+        for (String id : known) {
+            String key = org.uee.analysis.CheckCatalogue.keyFor(id);
+            if (key == null) {
+                continue;
+            }
+            check("the description of " + id + " reads in both languages",
+                    !org.uee.text.UiText.get("en_us", key).equals(key)
+                            && !org.uee.text.UiText.get("zh_cn", key).equals(key));
+        }
+
+        // A subset engine runs what was named and nothing else.
+        AnalysisEngine one = AnalysisEngine.named(java.util.List.of("compatibility"));
+        check("naming one check runs exactly that one",
+                one.analyses().size() == 1 && one.analyses().get(0).id().equals("compatibility"));
+        check("naming nothing runs every check",
+                AnalysisEngine.named(java.util.List.of()).analyses().size() == known.size());
+        check("and naming an unknown one runs nothing, rather than everything",
+                AnalysisEngine.named(java.util.List.of("nonesuch")).analyses().isEmpty());
     }
 
     // ---------------------------------------------------------------- fixture and harness

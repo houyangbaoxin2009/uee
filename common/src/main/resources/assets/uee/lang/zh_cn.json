@@ -208,5 +208,21 @@
   "uee.help.bare": "  %s                      按默认设置导出",
   "uee.help.bareAnalysis": "  %s                      只导出分析部分",
   "uee.status.analysisInOwnPackage": "单独一个包（UEEA）",
-  "uee.status.analysisBundled": "与数据合并"
+  "uee.status.analysisBundled": "与数据合并",
+  "uee.check.stageBefore": "采集前：只读加载器元数据",
+  "uee.check.stageAfter": "采集后：读取采集到的内容",
+  "uee.check.line": "  %s  ·  %s",
+  "uee.check.note": "检查按此顺序执行；用名称指定其中一项或几项",
+  "uee.check.unknown": "%s 不是检查项；可用：%s",
+  "uee.check.noneGiven": "没有指定检查项；可用：%s",
+  "uee.report.wrote": "已把报告写入 %s（%s 字节，%s 条发现）",
+  "uee.report.failed": "无法写出报告：%s",
+  "uee.check.containers": "读不出来的容器，以及相对模组而言异常大的容器",
+  "uee.check.coverage": "各类目/命名空间采集到了多少，以及被过滤掉多少",
+  "uee.check.dependency-graph": "缺失的依赖、声明的不兼容、重复的 id",
+  "uee.check.compatibility": "版本越界、循环依赖、为其它加载器或游戏版本构建的 jar",
+  "uee.check.mixins": "各模组 patch 了哪些类，以及被多个模组 patch 的目标类",
+  "uee.check.namespace-claims": "各模组声明的命名空间，以及被多个模组声明的命名空间",
+  "uee.check.orphan-namespaces": "注册表里存在、但没有模组声明的命名空间",
+  "uee.check.description": "      %s"
 }
