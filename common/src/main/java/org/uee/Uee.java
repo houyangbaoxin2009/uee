@@ -290,6 +290,29 @@ public final class Uee {
     }
 
     /**
+     * The language to say things in, or empty to follow the reader.
+     *
+     * <p>Returns empty rather than English when nothing can be resolved, and that is the important case: the
+     * default is that a message is sent as a key and resolved by whoever reads it, so "cannot tell" and
+     * "follow the reader" are the same answer and neither should become a decision made here.
+     *
+     * <p>Never throws. A message about a configuration that cannot be read would itself need a language, and
+     * a failure to say something is worse than saying it in the wrong language.
+     */
+    public static String messageLanguage() {
+        try {
+            if (adapter == null) {
+                return "";
+            }
+            String named = resolveForRun(ConfigFile.empty()).config().language();
+            return named == null ? "" : named;
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+
+    /**
      * Exports once, unprompted, if the configuration asks for it.
      *
      * <p>Off unless asked, and the check is the first thing the method does — a tool that writes files on

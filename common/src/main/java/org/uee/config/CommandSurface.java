@@ -41,16 +41,28 @@ public final class CommandSurface {
     /**
      * The outcome of a {@code set} verb.
      *
+     * <p>Carries the catalogue key and its arguments rather than a finished sentence, so whoever says it
+     * can say it in the reader's language. The English rendering is available here as well, because a log
+     * line and a test have no reader and would otherwise need the whole resolution chain to be reachable
+     * from them.
+     *
      * @param layer the partial description to add to the session
-     * @param description what changed, phrased for the user
+     * @param key the catalogue key for what changed
+     * @param args the key's arguments
      * @param count how many things the verb acted on, for the command's return value
      */
-    public record Setting(ConfigFile layer, String description, int count) {
+    public record Setting(ConfigFile layer, String key, Object[] args, int count) {
 
         public Setting {
             if (layer == null) {
-                throw new IllegalArgumentException("a setting must carry a layer");
+                throw new IllegalArgumentException(
+                        org.uee.text.UiText.get(null, "uee.err.settingMustCarryLayer"));
             }
+        }
+
+        /** What changed, in English; for a log line or a test rather than for a reader. */
+        public String description() {
+            return org.uee.text.UiText.format(null, key, args);
         }
     }
 
@@ -73,7 +85,7 @@ public final class CommandSurface {
         }
         Set<org.uee.model.ElementKind> kinds = Tokens.kinds(lowerTokens(arg));
         if (kinds == null) {
-            throw new IllegalArgumentException("unknown category in '" + arg + "'; see /uee kinds");
+            throw new IllegalArgumentException(org.uee.text.UiText.format(null, "uee.err.unknownCategory", arg));
         }
         return ConfigFile.builder().kinds(kinds).build();
     }
@@ -85,7 +97,7 @@ public final class CommandSurface {
         }
         Set<String> formats = Tokens.formats(lowerTokens(arg));
         if (formats == null) {
-            throw new IllegalArgumentException("unknown format in '" + arg + "'; see /uee formats");
+            throw new IllegalArgumentException(org.uee.text.UiText.format(null, "uee.err.unknownFormat", arg));
         }
         return ConfigFile.builder().formats(formats).build();
     }
@@ -102,13 +114,11 @@ public final class CommandSurface {
         Set<org.uee.model.ElementKind> kinds = asksKinds
                 ? Tokens.kinds(lowerTokens(kindsArg)) : null;
         if (asksKinds && kinds == null) {
-            throw new IllegalArgumentException("unknown category in '" + kindsArg
-                    + "'; see /uee kinds");
+            throw new IllegalArgumentException(org.uee.text.UiText.format(null, "uee.err.unknownCategory", kindsArg));
         }
         Set<String> formats = asksFormats ? Tokens.formats(lowerTokens(formatsArg)) : null;
         if (asksFormats && formats == null) {
-            throw new IllegalArgumentException("unknown format in '" + formatsArg
-                    + "'; see /uee formats");
+            throw new IllegalArgumentException(org.uee.text.UiText.format(null, "uee.err.unknownFormat", formatsArg));
         }
         if (kinds == null && formats == null) {
             return ConfigFile.empty();
@@ -135,9 +145,8 @@ public final class CommandSurface {
     public Setting setFields(String arg, boolean exclude) {
         Set<String> fields = rawTokens(arg);
         if (fields.isEmpty()) {
-            throw new IllegalArgumentException(exclude
-                    ? "/uee set exclude-fields <name> <name> …"
-                    : "/uee set fields <name> <name> …");
+            throw new IllegalArgumentException(
+                    org.uee.text.UiText.get(null, "uee.err.badFields"));
         }
         ConfigFile.Builder b = ConfigFile.builder();
         if (exclude) {
@@ -145,17 +154,17 @@ public final class CommandSurface {
         } else {
             b.includeFields(fields);
         }
-        return remember(new Setting(b.build(), exclude
-                ? "dropping these fields: " + String.join(", ", fields)
-                : "only these fields: " + String.join(", ", fields)
-                        + " (identity fields are always kept)", fields.size()));
+        return remember(new Setting(b.build(),
+                exclude ? "uee.set.fields.dropping" : "uee.set.fields.only",
+                new Object[] {String.join(", ", fields)}, fields.size()));
     }
 
     /** Sets a tag filter. */
     public Setting setTags(String arg, boolean exclude) {
         Set<String> tags = rawTokens(arg);
         if (tags.isEmpty()) {
-            throw new IllegalArgumentException("/uee set tags <tag> … or /uee set skip-tags <tag> …");
+            throw new IllegalArgumentException(
+                    org.uee.text.UiText.get(null, "uee.err.badTags"));
         }
         ConfigFile.Builder b = ConfigFile.builder();
         if (exclude) {
@@ -163,19 +172,17 @@ public final class CommandSurface {
         } else {
             b.includeTags(tags);
         }
-        return remember(new Setting(b.build(), exclude
-                ? "skipping elements tagged " + String.join(", ", tags)
-                : "only elements tagged " + String.join(", ", tags)
-                        + " (untagged elements are excluded)", tags.size()));
+        return remember(new Setting(b.build(),
+                exclude ? "uee.set.tags.skipping" : "uee.set.tags.only",
+                new Object[] {String.join(", ", tags)}, tags.size()));
     }
 
     /** Sets a namespace filter. */
     public Setting setNamespaces(String arg, boolean exclude) {
         Set<String> namespaces = rawTokens(arg);
         if (namespaces.isEmpty()) {
-            throw new IllegalArgumentException(exclude
-                    ? "/uee set namespaces <ns> … or /uee set skip-namespaces <ns> …"
-                    : "/uee set namespaces <ns> … or /uee set skip-namespaces <ns> …");
+            throw new IllegalArgumentException(
+                    org.uee.text.UiText.get(null, "uee.err.badNamespaces"));
         }
         ConfigFile.Builder b = ConfigFile.builder();
         for (String ns : namespaces) {
@@ -185,31 +192,34 @@ public final class CommandSurface {
                 b.includeNamespace(ns);
             }
         }
-        return remember(new Setting(b.build(), (exclude ? "skipping namespaces " : "only namespaces ")
-                + String.join(", ", namespaces), namespaces.size()));
+        return remember(new Setting(b.build(),
+                exclude ? "uee.set.namespaces.skipping" : "uee.set.namespaces.only",
+                new Object[] {String.join(", ", namespaces)}, namespaces.size()));
     }
 
     /** Sets a mod exclusion. */
     public Setting setSkipMods(String arg) {
         Set<String> mods = rawTokens(arg);
         if (mods.isEmpty()) {
-            throw new IllegalArgumentException("/uee set skip-mods <mod> …");
+            throw new IllegalArgumentException(
+                    org.uee.text.UiText.get(null, "uee.err.badMods"));
         }
         ConfigFile.Builder b = ConfigFile.builder();
         for (String id : mods) {
             b.excludeMod(id);
         }
-        return remember(new Setting(b.build(), "skipping mods " + String.join(", ", mods),
-                mods.size()));
+        return remember(new Setting(b.build(), "uee.set.mods.skipping",
+                new Object[] {String.join(", ", mods)}, mods.size()));
     }
 
     /** Sets the record count per shard. */
     public Setting setShards(int records) {
         if (records <= 0) {
-            throw new IllegalArgumentException("/uee set shards <records>, where records is at least 1");
+            throw new IllegalArgumentException(
+                    org.uee.text.UiText.get(null, "uee.err.badShards"));
         }
         return remember(new Setting(ConfigFile.builder().shardSize(records).build(),
-                "shard size: " + records + " records", records));
+                "uee.set.shards", new Object[] {records}, records));
     }
 
     /**
@@ -220,21 +230,22 @@ public final class CommandSurface {
      */
     public Setting setMaxFileMb(int mb) {
         if (mb < 0) {
-            throw new IllegalArgumentException("/uee set max-file-mb <n>, where n is 0 or more");
+            throw new IllegalArgumentException(
+                    org.uee.text.UiText.get(null, "uee.err.badMaxFile"));
         }
         return remember(new Setting(ConfigFile.builder().maxFileMb(mb).build(),
-                mb == 0
-                        ? "no byte-based file limit; shards split by record count"
-                        : "shards split at about " + mb + " MiB (a whole record may overshoot)", mb));
+                mb == 0 ? "uee.set.maxFile.none" : "uee.set.maxFile.limit",
+                mb == 0 ? new Object[0] : new Object[] {mb}, mb));
     }
 
     /** Sets the output directory. */
     public Setting setOutput(String dir) {
         if (dir == null || dir.isBlank()) {
-            throw new IllegalArgumentException("/uee set output <dir>");
+            throw new IllegalArgumentException(
+                    org.uee.text.UiText.get(null, "uee.err.badOutput"));
         }
         return remember(new Setting(ConfigFile.builder().output(Paths.get(dir.trim())).build(),
-                "output directory: " + dir.trim(), 1));
+                "uee.set.output", new Object[] {dir.trim()}, 1));
     }
 
     /**
@@ -244,43 +255,38 @@ public final class CommandSurface {
      */
     public Setting setFlag(String key, boolean value) {
         ConfigFile.Builder b = ConfigFile.builder();
-        String description;
+        String catalogKey;
+        Object[] args = new Object[0];
         switch (key) {
             case "quiet" -> {
                 b.quiet(value);
-                description = value ? "quiet: one summary line only" : "verbose again";
+                catalogKey = value ? "uee.set.quiet" : "uee.set.verbose";
             }
             case "dry_run" -> {
                 b.dryRun(value);
-                description = value
-                        ? "dry run: nothing will be written, but the plan is real"
-                        : "writing again";
+                catalogKey = value ? "uee.set.dryRun" : "uee.set.writing";
             }
             case "icons" -> {
                 b.icons(value);
-                description = "icons: " + value;
+                catalogKey = "uee.set.icons";
+                args = new Object[] {value};
             }
             case "assets" -> {
                 b.assets(value);
-                description = value
-                        ? "assets: textures, models, sounds and language files will be copied"
-                        : "assets: not copying them";
+                catalogKey = value ? "uee.set.assets.on" : "uee.set.assets.off";
             }
             case "delta" -> {
                 b.delta(value);
-                description = value
-                        ? "delta: only what changed since the last run will be written"
-                        : "delta: writing everything";
+                catalogKey = value ? "uee.set.delta.on" : "uee.set.delta.off";
             }
             case "auto_run" -> {
                 b.autoRun(value);
-                description = value
-                        ? "auto-run: an export will run when a game starts"
-                        : "auto-run: off";
+                catalogKey = value ? "uee.set.autoRun.on" : "uee.set.autoRun.off";
             }
-            default -> throw new IllegalArgumentException(key + " is not settable");
+            default -> throw new IllegalArgumentException(
+                    org.uee.text.UiText.format(null, "uee.set.unknown", key));
         }
-        return remember(new Setting(b.build(), description, 1));
+        return remember(new Setting(b.build(), catalogKey, args, 1));
     }
 
     /**
@@ -302,8 +308,8 @@ public final class CommandSurface {
             }
         }
         return remember(new Setting(ConfigFile.builder().persist(keys).build(),
-                keys.isEmpty() ? "nothing will be kept between runs"
-                        : "keeping " + String.join(", ", keys) + " between runs",
+                keys.isEmpty() ? "uee.set.persist.none" : "uee.set.persist",
+                keys.isEmpty() ? new Object[0] : new Object[] {String.join(", ", keys)},
                 keys.size()));
     }
 
@@ -318,10 +324,32 @@ public final class CommandSurface {
         ConfigFile.Builder b = ConfigFile.builder();
         if (trimmed.isEmpty()) {
             b.userDir(null);
-            return remember(new Setting(b.build(), "state directory: back to the default", 1));
+            return remember(new Setting(b.build(), "uee.set.userDir.default", new Object[0], 1));
         }
         b.userDir(java.nio.file.Path.of(trimmed));
-        return remember(new Setting(b.build(), "state directory: " + trimmed, 1));
+        return remember(new Setting(b.build(), "uee.set.userDir", new Object[] {trimmed}, 1));
+    }
+
+    /**
+     * Sets the language messages are said in, or follows the reader when given nothing.
+     *
+     * <p>Refused when no catalogue exists for the name. A language with no catalogue would fall back to
+     * English and look as though the setting had been applied, which is the failure this refuses rather
+     * than accepts: the answer to "is it in effect" has to be visible in what is said next.
+     */
+    public Setting setLanguage(String arg) {
+        String wanted = arg == null ? "" : arg.trim().toLowerCase(java.util.Locale.ROOT);
+        if (wanted.isEmpty()) {
+            return remember(new Setting(ConfigFile.builder().language(null).build(),
+                    "uee.set.language.game", new Object[0], 1));
+        }
+        if (!org.uee.text.UiText.isAvailable(wanted)) {
+            throw new IllegalArgumentException(org.uee.text.UiText.format(null,
+                    "uee.err.languageUnknown", wanted,
+                    String.join(", ", org.uee.text.UiText.availableLocales())));
+        }
+        return remember(new Setting(ConfigFile.builder().language(wanted).build(),
+                "uee.set.language", new Object[] {wanted}, 1));
     }
 
     // ---------------------------------------------------------------- the session

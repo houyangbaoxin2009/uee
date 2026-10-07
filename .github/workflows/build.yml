@@ -84,6 +84,9 @@ jobs:
       - name: Run the user state file test
         run: ./gradlew userStoreTest
 
+      - name: Run the message catalogue test
+        run: ./gradlew uiTextTest
+
   # Each loader builds separately because each needs its own patched game jar. `-x test` keeps the
   # core checks in the job above rather than repeating them four times.
   loaders:

@@ -249,6 +249,12 @@ public final class UeeCommand {
                                 .then(Commands.argument("keys", StringArgumentType.greedyString())
                                         .executes(ctx -> applySetting(ctx.getSource(),
                                                 () -> SURFACE.setPersist(arg(ctx, "keys"))))))
+                        .then(Commands.literal("language")
+                                .executes(ctx -> applySetting(ctx.getSource(),
+                                        () -> SURFACE.setLanguage("")))
+                                .then(Commands.argument("locale", StringArgumentType.word())
+                                        .executes(ctx -> applySetting(ctx.getSource(),
+                                                () -> SURFACE.setLanguage(arg(ctx, "locale"))))))
                         .then(Commands.literal("user-dir")
                                 .then(Commands.argument("dir", StringArgumentType.greedyString())
                                         .executes(ctx -> applySetting(ctx.getSource(),
@@ -799,7 +805,9 @@ public final class UeeCommand {
             java.util.function.Supplier<CommandSurface.Setting> work) {
         try {
             CommandSurface.Setting setting = work.get();
-            report(source, setting.description());
+            // Through the catalogue rather than the English rendering, so the confirmation of a setting is
+            // in the same language as the setting was asked for.
+            report(source, org.uee.mc.Ui.setting(setting));
             // Every set verb funnels through here, so "declare it once and it sticks" happens without
             // touching each verb -- and no verb added later can quietly forget to keep its setting.
             keepDeclaredSettings(source);
@@ -829,6 +837,12 @@ public final class UeeCommand {
         } catch (java.io.IOException | IllegalStateException e) {
             report(source, "could not keep the declared settings: " + e);
         }
+    }
+
+    private static void report(CommandSourceStack source, Component message) {
+        source.sendSuccess(() -> Component.literal(Uee.NAME + ": ").append(message), false);
+        source.sendSuccess(() -> Component.literal(
+                "  in effect until the server restarts; /uee config save makes it permanent"), false);
     }
 
     private static void report(CommandSourceStack source, String message) {

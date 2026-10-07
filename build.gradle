@@ -396,6 +396,22 @@ tasks.register('userStoreTest', JavaExec) {
     args = [layout.buildDirectory.dir('user-store-test').get().asFile.absolutePath]
 }
 
+/**
+ * Runs the message catalogue checks.
+ *
+ * <p>A translation system fails quietly: a key the code asks for and no catalogue defines shows a reader the
+ * key, and an entry nothing asks for looks maintained while being dead. Neither is a wrong answer anywhere,
+ * so the check reads the source and compares it against the catalogues.
+ */
+tasks.register('uiTextTest', JavaExec) {
+    description = 'Runs the message catalogue checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.UiTextTest'
+    args = [layout.buildDirectory.dir('ui-text-test').get().asFile.absolutePath]
+}
+
 /** Runs every Minecraft-independent check. */
 tasks.register('verifyAll') {
     description = 'Runs every Minecraft-independent check.'
@@ -404,5 +420,5 @@ tasks.register('verifyAll') {
             'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest', 'scaleTest',
             'tagTest', 'lootTableTest', 'iconTest', 'categoryTest', 'advancementTest',
             'worldgenTest', 'mcfunctionTest', 'deltaTest', 'assetTest', 'classLoaderTest',
-            'registrationOrderTest', 'userStoreTest'
+            'registrationOrderTest', 'userStoreTest', 'uiTextTest'
 }

@@ -270,8 +270,10 @@ public final class CommandSurfaceTest {
         expectRefusalSaying("an unknown category says where to look",
                 () -> CommandSurface.kinds("nonsense"), "/uee kinds");
         expectRefusal("an unknown format", () -> CommandSurface.formats("nonsense"));
+        // The listing verb, not the setting verb: /uee formats takes an argument and sets, so pointing a
+        // reader at it would tell them to do the thing that just failed.
         expectRefusalSaying("an unknown format says where to look",
-                () -> CommandSurface.formats("nonsense"), "/uee formats");
+                () -> CommandSurface.formats("nonsense"), "/uee listformats");
 
         // A partially wrong list must be refused, not silently narrowed to the valid part -- a run
         // that quietly exports less than asked is the worst outcome.

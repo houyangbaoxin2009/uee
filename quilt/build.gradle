@@ -12,7 +12,9 @@ base {
 sourceSets {
     main {
         java.srcDirs = ['src/main/java', '../common/src/main/java', '../common/src/mc/java']
-        resources.srcDirs = ['src/main/resources']
+        // The shared resources carry the message catalogues, so a translation is added in one place
+        // rather than in four -- the same reasoning as the shared java sources above.
+        resources.srcDirs = ['src/main/resources', '../common/src/main/resources']
     }
 }
 

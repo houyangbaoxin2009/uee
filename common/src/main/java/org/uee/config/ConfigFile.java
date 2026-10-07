@@ -60,7 +60,7 @@ public final class ConfigFile {
     public static final String[] KNOWN_KEYS = {
             "output", "package", "formats", "kinds",
             "analyze", "analysis_separate", "package_per_kind", "quiet",
-            "fields", "exclude_fields", "dry_run", "delta", "assets", "user_dir", "persist", "auto_run",
+            "fields", "exclude_fields", "dry_run", "delta", "assets", "user_dir", "persist", "auto_run", "language",
             "include_tags", "exclude_tags",
             "max_file_mb",
             "icons", "pretty", "include_paths",
@@ -91,6 +91,9 @@ public final class ConfigFile {
 
     /** Whether the file asks for an export at startup; null when it says nothing. */
     private final Boolean autoRun;
+
+    /** The language to say things in; null when the file says nothing, which follows the reader. */
+    private final String language;
     private final Set<String> includeTags;
 
     /** The keys the file asks to be kept; null when it says nothing. */
@@ -140,6 +143,7 @@ public final class ConfigFile {
         this.userDir = b.userDir;
         this.persist = b.persist;
         this.autoRun = b.autoRun;
+        this.language = b.language;
         this.includeTags = b.includeTags;
         this.excludeTags = b.excludeTags;
         this.maxFileMb = b.maxFileMb;
@@ -219,6 +223,9 @@ public final class ConfigFile {
         }
         if (autoRun != null) {
             keys.add("auto_run");
+        }
+        if (language != null) {
+            keys.add("language");
         }
         if (packageName != null) {
             keys.add("package");
@@ -393,6 +400,9 @@ public final class ConfigFile {
         if (autoRun != null) {
             b.autoRun(autoRun);
         }
+        if (language != null) {
+            b.language(language);
+        }
         if (includeTags != null) {
             for (String tag : includeTags) {
                 b.includeTag(tag);
@@ -526,6 +536,7 @@ public final class ConfigFile {
                 case "user_dir" -> b.userDir = path(value.asString());
                 case "persist" -> b.persist = new LinkedHashSet<>(strings(value));
                 case "auto_run" -> b.autoRun = value.asBool();
+                case "language" -> b.language = value.asString();
                 case "package" -> b.packageName = value.asString();
                 case "formats" -> {
                     Set<String> formats = Tokens.formats(strings(value));
@@ -775,6 +786,17 @@ public final class ConfigFile {
                 // instances. Empty by default, which sticks nothing. Trying ndjson once should not still be
                 // in force three packs later. persist and user_dir are never included.
                 persist = []
+
+                // 消息语言。**留空 = 跟随读的人**（每条消息按 key 发出，由客户端用它自己的语言解析，
+                // 所以每个玩家各看各的语言，服务器无需配置）。填一个语言名则**由本模组在这里解析**，
+                // 所有人看到同一种语言——适合日志、控制台，以及希望日志与屏幕一致的管理员。
+                // ★ 填一个没有消息的语言会被拒绝，而不是静默回退到英文。
+                // The language messages are said in. Empty follows the reader: each message is sent as a key
+                // and resolved by the client in the language that client chose, so every player reads their
+                // own. A value resolves here instead and everyone sees one language, which is what a log, a
+                // console and an operator who wants them to agree need.
+                // A language with no messages is refused rather than silently falling back to English.
+                language = ""
 
                 // 启动即导出（**默认关**）。开启后游戏一启动就自动跑一次导出；走作业，不卡启动线程。
                 // Export as soon as a game has started (off by default). The run is submitted as a job, so it
@@ -1062,6 +1084,7 @@ public final class ConfigFile {
         v.put("user_dir", config.userDir() == null ? "\"\"" : quote(config.userDir().toString()));
         v.put("persist", list(config.persist()));
         v.put("auto_run", Boolean.toString(config.autoRun()));
+        v.put("language", config.language() == null ? "\"\"" : quote(config.language()));
         v.put("package", quote(config.packageName()));
         v.put("formats", list(config.formats()));
         v.put("kinds", kindListText(config.kinds()));
@@ -1175,6 +1198,7 @@ public final class ConfigFile {
         private Path userDir;
         private Set<String> persist;
         private Boolean autoRun;
+        private String language;
         private Set<String> includeTags;
         private Set<String> excludeTags;
         private Integer maxFileMb;
@@ -1295,6 +1319,11 @@ public final class ConfigFile {
 
         public Builder persist(Set<String> keys) {
             this.persist = keys;
+            return this;
+        }
+
+        public Builder language(String locale) {
+            this.language = locale;
             return this;
         }
 

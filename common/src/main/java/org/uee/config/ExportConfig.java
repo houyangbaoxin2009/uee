@@ -112,6 +112,17 @@ public final class ExportConfig {
      * the kind of decision worth keeping.
      */
     private final boolean autoRun;
+
+    /**
+     * The language to say things in, or null to follow the reader.
+     *
+     * <p>Null is the interesting value and the default: messages are sent as translation keys and each
+     * client resolves them in the language that client already chose, so every player reads their own and
+     * nobody configures anything. A value here overrides that — everything is rendered on this side in the
+     * named language — which is what a log, a console, and a server watched by people who want one language
+     * need.
+     */
+    private final String language;
     private final Set<String> includeTags;
     /**
      * Which settings are kept between runs and between instances.
@@ -162,6 +173,7 @@ public final class ExportConfig {
         this.userDir = b.userDir;
         this.persist = b.persist == null ? Set.of() : Set.copyOf(b.persist);
         this.autoRun = b.autoRun;
+        this.language = b.language;
         this.includeTags = Collections.unmodifiableSet(new LinkedHashSet<>(b.includeTags));
         this.excludeTags = Collections.unmodifiableSet(new LinkedHashSet<>(b.excludeTags));
         this.maxFileBytes = b.maxFileBytes;
@@ -330,6 +342,11 @@ public final class ExportConfig {
     /** Whether to export as soon as a game has started, without being asked. */
     public boolean autoRun() {
         return autoRun;
+    }
+
+    /** The language to say things in, or null to follow the reader's own. */
+    public String language() {
+        return language;
     }
 
     /** Only elements carrying one of these tags. Empty means no tag restriction. */
@@ -504,6 +521,7 @@ public final class ExportConfig {
         b.userDir = userDir;
         b.persist = persist;
         b.autoRun = autoRun;
+        b.language = language;
         b.includeTags = new LinkedHashSet<>(includeTags);
         b.excludeTags = new LinkedHashSet<>(excludeTags);
         b.maxFileBytes = maxFileBytes;
@@ -581,6 +599,7 @@ public final class ExportConfig {
         private Path userDir;
         private Set<String> persist = Set.of();
         private boolean autoRun = false;
+        private String language;
         private Set<String> includeTags = new LinkedHashSet<>();
         private Set<String> excludeTags = new LinkedHashSet<>();
         private long maxFileBytes = 0;
@@ -704,6 +723,12 @@ public final class ExportConfig {
         /** Declares which settings are kept between runs. */
         public Builder persist(Set<String> keys) {
             this.persist = keys == null ? Set.of() : keys;
+            return this;
+        }
+
+        /** Sets the language to say things in; null follows the reader. */
+        public Builder language(String locale) {
+            this.language = locale;
             return this;
         }
 
