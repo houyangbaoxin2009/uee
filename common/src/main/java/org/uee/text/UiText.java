@@ -244,6 +244,35 @@ public final class UiText {
         return new LinkedHashSet<>(catalog(locale).keySet());
     }
 
+    /**
+     * The width of a string in text columns.
+     *
+     * <p>A full-width character occupies two columns and anything else one, which is what a reader sees and
+     * therefore what alignment has to be measured in. Counting characters instead is the mistake that makes
+     * a Chinese label look aligned in a text editor and staggered in the game.
+     *
+     * <p>The ranges are the ones a game font widens: CJK ideographs and their extensions, kana, hangul, the
+     * full-width punctuation forms, and the ideographic space.
+     */
+    public static int columns(String text) {
+        if (text == null) {
+            return 0;
+        }
+        int width = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            boolean wide = (c >= '\u1100' && c <= '\u115f')
+                    || (c >= '\u2e80' && c <= '\ua4cf')
+                    || (c >= '\uac00' && c <= '\ud7a3')
+                    || (c >= '\uf900' && c <= '\ufaff')
+                    || (c >= '\ufe30' && c <= '\ufe6f')
+                    || (c >= '\uff00' && c <= '\uff60')
+                    || (c >= '\u3000' && c <= '\u303f');
+            width += wide ? 2 : 1;
+        }
+        return width;
+    }
+
     /** Prefix every key carries, so a scan for keys in source has something specific to look for. */
     public static final String PREFIX = "uee.";
 }

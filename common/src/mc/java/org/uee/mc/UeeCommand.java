@@ -687,6 +687,30 @@ public final class UeeCommand {
     }
 
     /**
+     * The width a section heading occupies, in text columns.
+     *
+     * <p>Fixed so that the headings line up with each other and a reader's eye can find the boundary between
+     * sections. Chosen to fit a chat line with room to spare; the runs of "=" shrink when a language names a
+     * section longer, so the width is a property of the heading rather than of any one name.
+     */
+    private static final int SECTION_WIDTH = 38;
+
+    /**
+     * A section heading: the name centred between two runs of the frame character.
+     *
+     * <p>The name is looked up rather than passed in, because only the catalogue knows what a language calls
+     * the section, and the runs are sized from that name's measured width — which is why a longer name in
+     * one language does not make that language's headings a different length.
+     */
+    private static void section(CommandSourceStack source, String key) {
+        String name = org.uee.mc.Ui.lookup(key);
+        int remaining = Math.max(0, SECTION_WIDTH - org.uee.text.UiText.columns(name));
+        int left = remaining / 2;
+        int right = remaining - left;
+        detail(source, "uee.status.sectionFrame", "=".repeat(left), name, "=".repeat(right));
+    }
+
+    /**
      * How the analysis half is configured, as one word.
      *
      * <p>Returned as a catalogue key rather than as text because the word has to be translated and the
@@ -789,25 +813,36 @@ public final class UeeCommand {
         }
         var info = adapter.info();
 
-        // Laid out on a grid rather than assembled line by line: two spaces, a label, then the value, and
-        // each language aligns its own labels inside its own entry. The headline is the exception, being
-        // the name and version rather than a labelled fact.
+        // Grouped into sections, because the report answers three different questions and a flat list makes
+        // the reader find the boundary themselves. Each line is the same shape: two spaces, a label, its
+        // colon, and the value starting at the same column — with the padding living in the catalogue so
+        // each language aligns its own labels.
         String version = Uee.modVersion();
-        detail(source, "uee.status.headline", org.uee.mc.Ui.appName(),
+        detail(source, "uee.status.headline", org.uee.mc.Ui.appShortName(),
                 version.isEmpty() ? "" : version);
-        detail(source, "uee.status.environment", info.loader(), info.loaderVersion(),
-                info.minecraftVersion(), adapter.mods().size());
 
+        section(source, "uee.status.section.game");
+        detail(source, "uee.status.loader", info.loader() + " " + info.loaderVersion());
+        detail(source, "uee.status.game", "Minecraft " + info.minecraftVersion());
+        detail(source, "uee.status.mods", adapter.mods().size());
+
+        section(source, "uee.status.section.export");
         // What a one-key run would do, so the effective state is visible before anything runs.
         try {
             ConfigResolver.Resolved r = Uee.resolveForRun(ConfigFile.empty());
             ExportConfig c = r.config();
-            detail(source, "uee.status.settings", String.join(", ", c.formats()), analysisState(c));
+            detail(source, "uee.status.export", String.join(", ", c.formats()));
+            detail(source, "uee.status.analyzer", analysisState(c));
             detail(source, "uee.status.categories", c.kinds().size());
-            // The output directory is the one path whose useful action is to open it, so it is the one
-            // path that gets the directory treatment rather than the copy treatment.
+            // The output directory is the one path whose useful action is to open it, so it is the one that
+            // gets the directory treatment rather than the copy treatment.
             source.sendSuccess(() -> org.uee.mc.Ui.t("uee.status.output", "").copy()
                     .append(folderLink(source, c.outputDir())), false);
+            Path file = Uee.configFile();
+            if (file != null) {
+                source.sendSuccess(() -> org.uee.mc.Ui.t("uee.status.configLine", "").copy()
+                        .append(link(source, file)), false);
+            }
             for (String warning : r.warnings()) {
                 detail(source, "uee.status.warning", warning);
             }
@@ -815,11 +850,7 @@ public final class UeeCommand {
             detail(source, "uee.status.configUnreadable", e);
         }
 
-        Path file = Uee.configFile();
-        if (file != null) {
-            source.sendSuccess(() -> org.uee.mc.Ui.t("uee.status.configLine", "").copy()
-                    .append(link(source, file)), false);
-        }
+        section(source, "uee.status.section.messages");
         // The name of the language rather than the fact that it was chosen by following something: which
         // language the next line is in is the thing worth knowing, and it is knowable.
         String configured = Uee.messageLanguage();

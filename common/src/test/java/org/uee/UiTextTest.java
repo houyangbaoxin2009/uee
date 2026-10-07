@@ -65,6 +65,7 @@ public final class UiTextTest {
         theFallbackChain();
         theNameIsTranslated();
         theLabelledLinesLineUp();
+        theSectionHeadingsAreOneWidth();
         argumentsAreAlwaysSendable();
         formatting();
 
@@ -175,8 +176,9 @@ public final class UiTextTest {
 
         // Grouped by the listing they appear in, since two listings need not share a width.
         java.util.List<java.util.List<String>> groups = java.util.List.of(
-                java.util.List.of("uee.status.settings", "uee.status.categories", "uee.status.output",
-                        "uee.status.configLine", "uee.status.language"),
+                java.util.List.of("uee.status.loader", "uee.status.game", "uee.status.mods",
+                        "uee.status.export", "uee.status.analyzer", "uee.status.categories",
+                        "uee.status.output", "uee.status.configLine", "uee.status.language"),
                 java.util.List.of("uee.export.dataLoc", "uee.export.analysisLoc"));
 
         for (String locale : UiText.availableLocales()) {
@@ -198,11 +200,52 @@ public final class UiTextTest {
 
         // And the padding is real: an entry with a shorter label has to carry the filler, or the check above
         // would pass on a group that had been made uniform by making every label short.
-        check("the short label is padded to match",
-                columns(labelOf("zh_cn", "uee.status.settings"))
+        // The padded one is a three-character label, since the four-character ones need no padding at all.
+        check("a short label is padded to match the long ones",
+                columns(labelOf("zh_cn", "uee.status.loader"))
                         == columns(labelOf("zh_cn", "uee.status.categories")));
         check("with ideographic spaces rather than ordinary ones, so CJK aligns",
-                UiText.get("zh_cn", "uee.status.settings").indexOf('\u3000') > 0);
+                UiText.get("zh_cn", "uee.status.loader").indexOf('\u3000') > 0);
+        check("and the padding is measured, not counted",
+                columns(UiText.get("zh_cn", "uee.status.loader"))
+                        == columns(UiText.get("zh_cn", "uee.status.categories")));
+    }
+
+    /**
+     * The section headings are all one width, so the eye can find where a section starts.
+     *
+     * <p>The frame is punctuation sized by the renderer from the name's measured width, so the property worth
+     * checking is the one a reader sees: whatever each language calls a section, every heading is as wide as
+     * every other heading. The width is the one the renderer uses, so the two cannot disagree.
+     */
+    private static void theSectionHeadingsAreOneWidth() {
+        section("the section headings");
+
+        int target = 38;
+        for (String locale : UiText.availableLocales()) {
+            java.util.Set<Integer> widths = new java.util.LinkedHashSet<>();
+            StringBuilder seen = new StringBuilder();
+            for (String key : java.util.List.of("uee.status.section.game", "uee.status.section.export",
+                    "uee.status.section.messages")) {
+                String name = UiText.get(locale, key);
+                int remaining = Math.max(0, target - UiText.columns(name));
+                String heading = "=".repeat(remaining / 2) + name + "=".repeat(remaining - remaining / 2);
+                widths.add(UiText.columns(heading));
+                seen.append('[').append(name).append('=').append(UiText.columns(heading)).append(']');
+            }
+            check(locale + " headings are all " + target + " wide: " + seen,
+                    widths.size() == 1 && widths.contains(target));
+        }
+
+        // A section is named by the catalogue, so a name of a different length is how this would break, and a
+        // name wider than the heading would leave no frame at all -- a heading that stopped being one.
+        for (String locale : UiText.availableLocales()) {
+            for (String key : java.util.List.of("uee.status.section.game", "uee.status.section.export",
+                    "uee.status.section.messages")) {
+                check(locale + " names " + key + " within the heading width",
+                        UiText.columns(UiText.get(locale, key)) < target);
+            }
+        }
     }
 
     /** The label part of an entry: up to the first placeholder, or the whole entry. */
@@ -213,22 +256,13 @@ public final class UiTextTest {
     }
 
     /**
-     * The width of a string in text columns: a full-width character takes two, anything else one.
+     * The width of a string in text columns, asked of the core rather than measured again here.
      *
-     * <p>The ranges are the ones a game font widens: CJK ideographs, kana, hangul, and the full-width forms
-     * of Latin punctuation.
+     * <p>A second copy would be a second rule, and the renderer pads with the core one: if the two ever
+     * differed, this check would pass on text the game lays out differently.
      */
     private static int columns(String text) {
-        int width = 0;
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            boolean wide = (c >= '\u1100' && c <= '\u115f') || (c >= '\u2e80' && c <= '\ua4cf')
-                    || (c >= '\uac00' && c <= '\ud7a3') || (c >= '\uf900' && c <= '\ufaff')
-                    || (c >= '\ufe30' && c <= '\ufe6f') || (c >= '\uff00' && c <= '\uff60')
-                    || (c >= '\u3000' && c <= '\u303f');
-            width += wide ? 2 : 1;
-        }
-        return width;
+        return UiText.columns(text);
     }
 
     // ---------------------------------------------------------------- keys versus code
