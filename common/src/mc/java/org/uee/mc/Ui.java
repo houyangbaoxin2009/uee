@@ -48,6 +48,29 @@ public final class Ui {
         return Component.literal(UiText.format(locale, key, args));
     }
 
+    /**
+     * One catalogue entry as plain text, for a caller that is building a sentence around it.
+     *
+     * <p>Separate from {@link #t} because a word that goes inside another message cannot be a Component:
+     * the outer entry has to hold it as an argument, and the argument has to be text.
+     */
+    public static String lookup(String key) {
+        String locale = Uee.messageLanguage();
+        return UiText.get(locale == null || locale.isBlank() ? null : locale, key);
+    }
+
+    /**
+     * A catalogue entry as text, formatted, in the reader's language.
+     *
+     * <p>For a caller that is about to hand the string to something which takes text rather than a
+     * component -- a log line, or the report helper. The component form is {@link #t}, and the difference
+     * matters only in that this one has already resolved the language.
+     */
+    public static String format(String key, Object... args) {
+        String locale = Uee.messageLanguage();
+        return UiText.format(locale == null || locale.isBlank() ? null : locale, key, args);
+    }
+
     /** What a setting did, in the reader's language. */
     public static Component setting(CommandSurface.Setting setting) {
         return t(setting.key(), setting.args());

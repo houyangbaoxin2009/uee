@@ -21,10 +21,10 @@ jar 元数据里声明的范围已收紧为 `>=1.21.1 <1.21.2`，所以装到别
 校验和（sha256），供你核对拿到的文件没损坏：
 
 ```
-3e2ef786b51ed5caa99f76ee96a7236c2afb89196ee3ac4dfefc932b0c8955ce  uee-fabric-0.1.0.jar
-4a17a9d9963d2c1cef030e46d8442b4924df2c13fcf3af99c5e3017c773957a9  uee-neoforge-0.1.0.jar
-dd120d6f07ee0d08b52a6d731de1fdba90f662b18fc594960b763650439bee43  uee-forge-0.1.0.jar
-00d80997002c85a3eada104cb2399ad34e8c35efc8f37d59d23c629ebb64f716  uee-quilt-0.1.0.jar
+47c91b373a9d67088df9056695c3c1b9769d7416b55f7b1148a5f5367a5ed8f8  uee-fabric-0.1.0.jar
+30a5838718f042d803ce04ea30918efd21f2d2e200d2dce010b5d193bc905ff3  uee-neoforge-0.1.0.jar
+d3e7e46c4761fff0edf6bc9fe4f64a9b1c9e39cc5be0044027bf353f3d6ad609  uee-forge-0.1.0.jar
+08afa558acbe210c32be242d4b55ba2a3c796b1ec342023503af5ce01f5a3f4a  uee-quilt-0.1.0.jar
 ```
 
 **这批 jar 修掉了一个真机故障**（见文末「已修」）。旧的 jar 请删掉再放新的。
@@ -183,7 +183,7 @@ dd120d6f07ee0d08b52a6d731de1fdba90f662b18fc594960b763650439bee43  uee-forge-0.1.
 ```
 
 ★ 填一个**没有消息**的语言会被**拒绝**并列出可用语言——因为静默回退到英文会让人以为设置生效了。
-★ 目前随包提供 **`en_us`** 与 **`zh_cn`**。命令字面量、类目名、格式名、配置键名**不翻译**（它们是机器词汇，
+★ 目前随包提供 **`en_us`** 与 **`zh_cn`**，**全部 182 条消息都已翻译**（含 status、帮助、各类列表、声明表、配置文件相关的全部输出）。命令字面量、类目名、格式名、配置键名**不翻译**（它们是机器词汇，
 同一个词必须同时能在文件、命令和 API 里用）。
 
 ## 语言

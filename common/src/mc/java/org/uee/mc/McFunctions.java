@@ -34,7 +34,8 @@ public final class McFunctions {
     public static void run(CommandSourceStack source, String resourceId) {
         ResourceLocation id = ResourceLocation.tryParse(resourceId);
         if (id == null) {
-            throw new IllegalArgumentException("'" + resourceId + "' is not a valid function id");
+            throw new IllegalArgumentException(org.uee.mc.Ui.format("uee.flow.badFunctionId",
+                    resourceId));
         }
         var server = source.getServer();
         var function = server.getFunctions().get(id);

@@ -42,7 +42,8 @@ public final class UiTextTest {
      * therefore a deliberate act, in the same list the catalogue is organised by.
      */
     private static final Pattern KEY = Pattern.compile(
-            "\"(uee\\.(?:set|err|cmd|status|export|job|config|declare|asset)\\.[A-Za-z0-9_.]+)\"");
+            "\"(uee\\.(?:set|err|cmd|status|export|job|jobs|kinds|formats|config|declare|asset"
+                    + "|help|flow|datapack|globalpack|target|strategy|finding|hover)\\.[A-Za-z0-9_.]+)\"");
 
     public static void main(String[] args) throws IOException {
         Path root = Path.of(args.length > 0 ? args[0] : "build/ui-text-test");

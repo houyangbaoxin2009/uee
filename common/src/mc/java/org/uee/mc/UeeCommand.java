@@ -392,7 +392,7 @@ public final class UeeCommand {
             source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
             return 0;
         } catch (IOException e) {
-            source.sendFailure(Component.literal(Uee.NAME + ": could not read the config file: " + e));
+            refuse(source, "uee.cmd.configUnreadable", e);
             return 0;
         }
         if (!resolved.ok()) {
@@ -402,31 +402,27 @@ public final class UeeCommand {
             return 0;
         }
         for (String warning : resolved.warnings()) {
-            source.sendSuccess(() -> Component.literal(Uee.NAME + ": warning: " + warning), false);
+            tell(source, "uee.cmd.warning", warning);
         }
 
         ExportConfig config = resolved.config();
         boolean quiet = config.quiet();
         Path root = config.outputDir();
         if (!quiet) {
-            source.sendSuccess(() -> Component.literal(Uee.NAME + ": exporting "
-                    + config.kinds().size() + " category/categories as "
-                    + String.join(", ", config.formats())), false);
+            tell(source, "uee.export.starting", config.kinds().size(),
+                    String.join(", ", config.formats()));
         }
 
         long started = System.nanoTime();
         try {
             ExportReport report = Uee.export(config, root);
             long millis = (System.nanoTime() - started) / 1_000_000L;
-            source.sendSuccess(() -> Component.literal(Uee.NAME + ": " + report.artifacts().size()
-                    + " files, " + report.records() + " records, " + report.findings()
-                    + " findings in " + millis + " ms"), false);
+            tell(source, "uee.export.summary", report.artifacts().size(), report.records(),
+                    report.findings(), millis);
             if (!report.failures().isEmpty()) {
                 // Not a failure of the run: the isolation contract means these are recorded and the
                 // export continues, so this is reported as information with a pointer to the list.
-                source.sendSuccess(() -> Component.literal(Uee.NAME + ": " + report.failures().size()
-                        + " element(s) could not be collected; the run continued and the list is in"
-                        + " the output"), false);
+                tell(source, "uee.export.partialFailures", report.failures().size());
             }
             if (!quiet) {
                 showLocations(source, root, config);
@@ -435,7 +431,7 @@ public final class UeeCommand {
             // `execute store result` yields a number and `store success` gates on non-zero.
             return report.artifacts().size();
         } catch (Throwable t) {
-            source.sendFailure(Component.literal(Uee.NAME + " export failed: " + t));
+            refuse(source, "uee.export.failed", t);
             return 0;
         }
     }
@@ -475,24 +471,21 @@ public final class UeeCommand {
         try {
             UeeJob job = Uee.startExport(config, config.outputDir(),
                     completionNotifier(source, config));
-            source.sendSuccess(() -> Component.literal(Uee.NAME + ": started job #" + job.id()
-                    + " (" + job.label() + ")"), false);
+            tell(source, "uee.export.started", job.id(), job.label());
             // Said differently depending on whether anyone will be told the result: a player does not
             // need instructions for a message they are about to receive, and a function does need
             // them because nothing else will arrive.
             if (source.getEntity() != null) {
-                source.sendSuccess(() -> Component.literal(
-                        "  you will be told when it finishes"), false);
+                detail(source, "uee.export.willBeTold");
             } else {
-                source.sendSuccess(() -> Component.literal(
-                        "  poll /uee jobs until it reaches 0"), false);
+                detail(source, "uee.export.pollJobs");
             }
             return 1;
         } catch (IllegalStateException e) {
             source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
             return 0;
         } catch (Throwable t) {
-            source.sendFailure(Component.literal(Uee.NAME + " could not start the export: " + t));
+            refuse(source, "uee.export.couldNotStart", t);
             return 0;
         }
     }
@@ -533,8 +526,7 @@ public final class UeeCommand {
                 // Gone. The artifacts are on disk and the summary is in the log; nothing else to do.
                 return;
             }
-            player.sendSystemMessage(Component.literal(Uee.NAME + ": job #" + job.id() + " "
-                    + job.outcome()));
+            player.sendSystemMessage(line("uee.jobs.finished", job.id(), job.outcome()));
             if (job.report() != null) {
                 player.sendSystemMessage(Component.literal("  ").append(link(source, job.root())));
             }
@@ -553,16 +545,15 @@ public final class UeeCommand {
         UeeJobs runner = Uee.jobs();
         int unfinished = runner.unfinished();
         if (unfinished == 0) {
-            source.sendSuccess(() -> Component.literal(Uee.NAME + ": idle"), false);
+            tell(source, "uee.jobs.idle");
         } else {
-            source.sendSuccess(() -> Component.literal(Uee.NAME + ": " + unfinished
-                    + " job(s) in progress"), false);
+            tell(source, "uee.jobs.inProgress", unfinished);
             for (UeeJob job : runner.activeJobs()) {
                 source.sendSuccess(() -> Component.literal("  " + job.describe()), false);
             }
         }
         if (!runner.recentJobs().isEmpty()) {
-            source.sendSuccess(() -> Component.literal("  recent:"), false);
+            detail(source, "uee.jobs.recent");
             runner.recentJobs().stream().limit(5).forEach(job -> source.sendSuccess(
                     () -> Component.literal("    " + job.describe()), false));
         }
@@ -572,15 +563,14 @@ public final class UeeCommand {
     private static int jobDetail(CommandSourceStack source, int id) {
         UeeJob job = Uee.jobs().get(id);
         if (job == null) {
-            source.sendFailure(Component.literal(Uee.NAME + ": no job #" + id));
+            refuse(source, "uee.jobs.noJob", id);
             return 0;
         }
         source.sendSuccess(() -> Component.literal("  " + job.describe()), false);
-        source.sendSuccess(() -> Component.literal("    state " + job.state().token()
-                + ", kinds " + job.kinds() + ", formats " + job.formats()), false);
+        detail(source, "uee.jobs.state", job.state().token(), job.kinds(), job.formats());
         ExportReport report = job.report();
         if (report != null) {
-            source.sendSuccess(() -> Component.literal("    wrote to " + report.root()), false);
+            detail(source, "uee.jobs.wroteTo", report.root());
         }
         return 1;
     }
@@ -588,27 +578,27 @@ public final class UeeCommand {
     private static int cancelJob(CommandSourceStack source, int id) {
         UeeJob job = Uee.jobs().get(id);
         if (job == null) {
-            source.sendFailure(Component.literal(Uee.NAME + ": no job #" + id));
+            refuse(source, "uee.export.notAJob", id);
             return 0;
         }
         if (Uee.jobs().cancel(id)) {
-            source.sendSuccess(() -> Component.literal(Uee.NAME + ": cancelled job #" + id), false);
+            tell(source, "uee.jobs.cancelled", id);
             return 1;
         }
         // A running export is mid-write across many open shards; stopping it would leave a bundle
         // whose completeness cannot be determined, so this is refused rather than done half-way.
-        source.sendFailure(Component.literal(Uee.NAME + ": job #" + id + " has already started;"
-                + " an export in progress is not interrupted because a partly written bundle cannot"
-                + " be told from a complete one"));
+        refuse(source, "uee.jobs.alreadyStarted", id);
         return 0;
     }
 
     /** Emits clickable paths, so the output can be opened without retyping them. */
     private static void showLocations(CommandSourceStack source, Path root, ExportConfig config) {
-        source.sendSuccess(() -> Component.literal("  data:     ").append(link(source, root)), false);
+        source.sendSuccess(() -> org.uee.mc.Ui.t("uee.export.dataLoc").copy()
+                .append(link(source, root)), false);
         if (config.analyze() && config.analysisSeparate()) {
             Path analysis = sibling(root, "-analysis");
-            source.sendSuccess(() -> Component.literal("  analysis: ").append(link(source, analysis)), false);
+            source.sendSuccess(() -> org.uee.mc.Ui.t("uee.export.analysisLoc").copy()
+                    .append(link(source, analysis)), false);
         }
     }
 
@@ -651,6 +641,46 @@ public final class UeeCommand {
      * those contexts the path is still the useful part, so it is emitted as plain text rather than
      * carrying an interaction that reaches nobody.
      */
+    /**
+     * A line from this program, in the reader's language, addressed to whoever asked.
+     *
+     * <p>The prefix is added here rather than inside every entry, so a catalogue says only the sentence and
+     * a translator never sees the program's name as something to translate.
+     */
+    static Component line(String key, Object... args) {
+        return Component.literal(Uee.NAME + ": ").append(org.uee.mc.Ui.t(key, args));
+    }
+
+    /** Tells whoever asked. */
+    private static void tell(CommandSourceStack source, String key, Object... args) {
+        source.sendSuccess(() -> line(key, args), false);
+    }
+
+    /** Refuses whoever asked. */
+    private static void refuse(CommandSourceStack source, String key, Object... args) {
+        source.sendFailure(line(key, args));
+    }
+
+    /**
+     * How the analysis half is configured, as one word.
+     *
+     * <p>Returned as a catalogue key rather than as text because the word has to be translated and the
+     * sentence it goes into is translated too: returning the finished word here would need this method to
+     * know which language the caller is about to use.
+     */
+    private static String analysisState(org.uee.config.ExportConfig c) {
+        if (!c.analyze()) {
+            return org.uee.mc.Ui.lookup("uee.status.analysisOff");
+        }
+        return org.uee.mc.Ui.lookup(c.analysisSeparate()
+                ? "uee.status.analysisInOwnPackage" : "uee.status.analysisBundled");
+    }
+
+    /** A line that is not from this program as such: a continuation, indented under the last thing said. */
+    private static void detail(CommandSourceStack source, String key, Object... args) {
+        source.sendSuccess(() -> org.uee.mc.Ui.t(key, args), false);
+    }
+
     private static Component link(CommandSourceStack source, Path path) {
         String text = path.toAbsolutePath().toString();
         // MutableComponent, not Component: the interface has no withStyle, and literal() already
@@ -665,7 +695,7 @@ public final class UeeCommand {
                 // The hover says what the click does. It used to say "open / 打开" for a click that has
                 // never been able to open anything, since the action was refused everywhere it mattered.
                 .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                        Component.literal("copy / 复制"))));
+                        org.uee.mc.Ui.t("uee.hover.copy"))));
     }
 
     /**
@@ -688,28 +718,25 @@ public final class UeeCommand {
         try {
             Uee.analyzeWithoutCollecting(findings::add);
         } catch (Throwable t) {
-            source.sendFailure(Component.literal(Uee.NAME + " analysis failed: " + t));
+            refuse(source, "uee.status.analysisFailed", t);
             return 0;
         }
         if (findings.isEmpty()) {
-            source.sendSuccess(() -> Component.literal(
-                    Uee.NAME + ": nothing found by the checks that need no collection"), false);
+            tell(source, "uee.status.nothingFound");
             return 0;
         }
         int errors = (int) findings.stream().filter(Finding::isError).count();
-        source.sendSuccess(() -> Component.literal(Uee.NAME + ": " + findings.size()
-                + " finding(s), " + errors + " error(s)"), false);
+        tell(source, "uee.status.findings", findings.size(), errors);
         // Errors first: a missing dependency matters more than a large container, and a list that
         // buries the former under the latter does not get read.
         findings.stream()
                 .sorted(Comparator.comparing(f -> f.severity().ordinal()))
                 .limit(FINDINGS_SHOWN)
-                .forEach(f -> source.sendSuccess(() -> Component.literal(
-                        "  [" + f.severity().token() + "] " + f.message()), false));
+                .forEach(f -> detail(source, "uee.finding.entry", f.severity().token(),
+                        f.message()));
         if (findings.size() > FINDINGS_SHOWN) {
             int remaining = findings.size() - FINDINGS_SHOWN;
-            source.sendSuccess(() -> Component.literal("  ... and " + remaining
-                    + " more; /uee export analysis writes them all out"), false);
+            detail(source, "uee.status.more", remaining);
         }
         return findings.size();
     }
@@ -717,44 +744,41 @@ public final class UeeCommand {
     private static int status(CommandSourceStack source) {
         var adapter = Uee.adapter();
         if (adapter == null) {
-            source.sendFailure(Component.literal(Uee.NAME + ": no loader adapter bound"));
+            refuse(source, "uee.cmd.noAdapter");
             return 0;
         }
         var info = adapter.info();
-        source.sendSuccess(() -> Component.literal(Uee.NAME + " " + info.loader() + " "
-                + info.loaderVersion() + " / Minecraft " + info.minecraftVersion()
-                + " / " + adapter.mods().size() + " mods"), false);
+        // No prefix: the headline already names the program, and adding the usual one would say it twice.
+        detail(source, "uee.status.headline", Uee.NAME, info.loader(), info.minecraftVersion(),
+                adapter.mods().size());
 
         // Show what a one-key run would do, so the effective state is visible before anything runs.
         try {
             ConfigResolver.Resolved r = Uee.resolveForRun(ConfigFile.empty());
             ExportConfig c = r.config();
-            source.sendSuccess(() -> Component.literal("  default export: "
-                    + String.join(", ", c.formats()) + " / " + c.kinds().size()
-                    + " categories / analysis " + (c.analyze()
-                            ? (c.analysisSeparate() ? "in its own package" : "bundled") : "off")),
-                    false);
+            detail(source, "uee.status.defaultExport", String.join(", ", c.formats()),
+                    c.kinds().size(), analysisState(c));
             for (String warning : r.warnings()) {
-                source.sendSuccess(() -> Component.literal("  warning: " + warning), false);
+                detail(source, "uee.status.warning", warning);
             }
         } catch (IOException e) {
-            source.sendSuccess(() -> Component.literal("  config file unreadable: " + e), false);
+            detail(source, "uee.status.configUnreadable", e);
         }
         Path file = Uee.configFile();
         if (file != null) {
-            source.sendSuccess(() -> Component.literal("  config:   ").append(link(source, file)), false);
+            source.sendSuccess(() -> org.uee.mc.Ui.t("uee.status.config").copy()
+                    .append(link(source, file)), false);
         }
         return 1;
     }
 
     private static int listKinds(CommandSourceStack source) {
-        source.sendSuccess(() -> Component.literal("categories / 内容类别"), false);
-        source.sendSuccess(() -> Component.literal("  groups:   " + Tokens.groups()), false);
-        source.sendSuccess(() -> Component.literal("  data:     " + kindNames(true)), false);
-        source.sendSuccess(() -> Component.literal("  analysis: " + kindNames(false)), false);
-        source.sendSuccess(() -> Component.literal(
-                "  name a category in either its singular or its plural form"), false);
-        source.sendSuccess(() -> Component.literal("  e.g. /uee export items,blocks entity"), false);
+        detail(source, "uee.kinds.header");
+        detail(source, "uee.kinds.groups", Tokens.groups());
+        detail(source, "uee.kinds.data", kindNames(true));
+        detail(source, "uee.kinds.analysis", kindNames(false));
+        detail(source, "uee.kinds.pluralNote");
+        detail(source, "uee.kinds.example");
         return 1;
     }
 
@@ -773,14 +797,10 @@ public final class UeeCommand {
     }
 
     private static int listFormats(CommandSourceStack source) {
-        source.sendSuccess(() -> Component.literal(
-                "formats: " + String.join(" ", Uee.formatTokens())), false);
-        source.sendSuccess(() -> Component.literal(
-                "  json grouped document · ndjson one record per line · wiki importer projection"),
-                false);
-        source.sendSuccess(() -> Component.literal(
-                "  td / zd tie ecosystem · yaml / toml / xml generic interchange"), false);
-        source.sendSuccess(() -> Component.literal("  e.g. /uee formats json,wiki"), false);
+        detail(source, "uee.formats.header", String.join(" ", Uee.formatTokens()));
+        detail(source, "uee.formats.note1");
+        detail(source, "uee.formats.note2");
+        detail(source, "uee.formats.example");
         return 1;
     }
 
@@ -832,7 +852,8 @@ public final class UeeCommand {
             org.uee.config.ExportConfig resolved = Uee.resolveForRun(ConfigFile.empty()).config();
             int kept = Uee.saveUserState(resolved);
             if (kept > 0) {
-                report(source, "kept " + kept + " setting(s) in " + Uee.userStateFile(resolved));
+                report(source, org.uee.mc.Ui.format("uee.declare.kept", kept,
+                        Uee.userStateFile(resolved)));
             }
         } catch (java.io.IOException | IllegalStateException e) {
             report(source, "could not keep the declared settings: " + e);
@@ -841,39 +862,31 @@ public final class UeeCommand {
 
     private static void report(CommandSourceStack source, Component message) {
         source.sendSuccess(() -> Component.literal(Uee.NAME + ": ").append(message), false);
-        source.sendSuccess(() -> Component.literal(
-                "  in effect until the server restarts; /uee config save makes it permanent"), false);
+        detail(source, "uee.set.inEffect");
     }
 
     private static void report(CommandSourceStack source, String message) {
         source.sendSuccess(() -> Component.literal(Uee.NAME + ": " + message), false);
-        source.sendSuccess(() -> Component.literal(
-                "  in effect until the server restarts; /uee config save makes it permanent"), false);
+        detail(source, "uee.set.inEffect");
     }
 
     /** Lists what the long form can set, so it is discoverable without the documentation. */
     private static int listSettables(CommandSourceStack source) {
         java.util.List<String> log = SURFACE.log();
-        source.sendSuccess(() -> Component.literal("settable / 可设置：" + log.size()
-                + " override(s) this session"), false);
+        detail(source, "uee.config.knobs", log.size());
         for (String line : log) {
             source.sendSuccess(() -> Component.literal("  " + line), false);
         }
-        source.sendSuccess(() -> Component.literal("  /uee set fields <name> …"), false);
-        source.sendSuccess(() -> Component.literal("  /uee set exclude-fields <name> …"), false);
-        source.sendSuccess(() -> Component.literal("  /uee set tags | skip-tags <tag> …"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  /uee set namespaces | skip-namespaces <ns> …"), false);
-        source.sendSuccess(() -> Component.literal("  /uee set skip-mods <mod> …"), false);
-        source.sendSuccess(() -> Component.literal("  /uee set shards <records>"), false);
-        source.sendSuccess(() -> Component.literal("  /uee set max-file-mb <n>   (0 = by count)"),
-                false);
-        source.sendSuccess(() -> Component.literal("  /uee set output <dir>"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  /uee set quiet | noisy | dry-run | icons | no-icons"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  every one of these is also a config file key; /uee config template lists them"),
-                false);
+        detail(source, "uee.config.setHelps1");
+        detail(source, "uee.config.setHelps2");
+        detail(source, "uee.config.setHelps3");
+        detail(source, "uee.config.setHelps4");
+        detail(source, "uee.config.setHelps5");
+        detail(source, "uee.config.setHelps6");
+        detail(source, "uee.config.setHelps7");
+        detail(source, "uee.config.setHelps8");
+        detail(source, "uee.config.setHelps9");
+        detail(source, "uee.config.setHelps10");
         return log.size();
     }
 
@@ -889,7 +902,7 @@ public final class UeeCommand {
      */
     private static int runFlow(CommandSourceStack source, String name) {
         if (name == null || name.isBlank()) {
-            source.sendFailure(Component.literal(Uee.NAME + ": /uee flow <name>"));
+            refuse(source, "uee.flow.usage");
             return 0;
         }
         // Two kinds of flow live under one name. A function flow is a datapack function, so the game
@@ -913,12 +926,10 @@ public final class UeeCommand {
     private static int runFunctionFlow(CommandSourceStack source, FunctionFlow flow) {
         try {
             McFunctions.run(source, flow.resourceId());
-            source.sendSuccess(() -> Component.literal(Uee.NAME + ": ran flow "
-                    + flow.qualifiedId() + " (" + flow.resourceId() + ")"), false);
+            tell(source, "uee.flow.ran", flow.qualifiedId() + " (" + flow.resourceId() + ")");
             return 1;
         } catch (Throwable t) {
-            source.sendFailure(Component.literal(Uee.NAME + ": flow " + flow.qualifiedId()
-                    + " could not be run: " + t));
+            refuse(source, "uee.flow.couldNotRun", flow.qualifiedId() + ": " + t);
             return 0;
         }
     }
@@ -926,29 +937,24 @@ public final class UeeCommand {
     private static int listFlows(CommandSourceStack source) {
         DatapackCatalog catalog = Uee.catalog();
         if (catalog.allFlowIds().isEmpty()) {
-            source.sendSuccess(() -> Component.literal(Uee.NAME
-                    + ": no datapack defines a flow"), false);
-            source.sendSuccess(() -> Component.literal(
-                    "  a configuration flow goes at data/<namespace>/uee/flows/<id>.json"), false);
-            source.sendSuccess(() -> Component.literal(
-                    "  a function flow goes at " + Uee.functionFlowPattern()), false);
+            tell(source, "uee.flow.noFlow");
+            detail(source, "uee.flow.whereConfig");
+            detail(source, "uee.flow.whereFunction", Uee.functionFlowPattern());
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("flows / 流程 (" + catalog.allFlowIds().size()
-                + ")"), false);
+        detail(source, "uee.flow.header", catalog.allFlowIds().size());
         for (FlowDefinition flow : catalog.flows().values()) {
-            source.sendSuccess(() -> Component.literal("  " + flow.qualifiedId() + "  [config]"
-                    + (flow.description() == null ? "" : "  — " + flow.description())), false);
-            source.sendSuccess(() -> Component.literal("      sets: "
-                    + (flow.touchedKeys().isEmpty() ? "(defaults only)"
-                            : String.join(", ", flow.touchedKeys()))
-                    + (flow.hasTargets() ? "  targets: " + String.join(", ", flow.targets()) : "")),
-                    false);
+            detail(source, "uee.flow.configTag", flow.qualifiedId()
+                    + (flow.description() == null ? "" : "  — " + flow.description()));
+            detail(source, "uee.flow.sets", flow.touchedKeys().isEmpty()
+                    ? org.uee.mc.Ui.lookup("uee.flow.defaultsOnly")
+                    : String.join(", ", flow.touchedKeys())
+                            + (flow.hasTargets()
+                                    ? "  targets: " + String.join(", ", flow.targets()) : ""));
         }
         for (FunctionFlow flow : catalog.functionFlows().values()) {
-            source.sendSuccess(() -> Component.literal("  " + flow.qualifiedId() + "  [function]  "
-                    + flow.resourceId()
-                    + (flow.description() == null ? "" : "  — " + flow.description())), false);
+            detail(source, "uee.flow.functionTag", flow.qualifiedId(), flow.resourceId()
+                    + (flow.description() == null ? "" : "  — " + flow.description()));
         }
         return catalog.allFlowIds().size();
     }
@@ -956,16 +962,13 @@ public final class UeeCommand {
     private static int listTargets(CommandSourceStack source) {
         DatapackCatalog catalog = Uee.catalog();
         if (catalog.targets().isEmpty()) {
-            source.sendSuccess(() -> Component.literal(Uee.NAME
-                    + ": no datapack defines a collection target"), false);
+            tell(source, "uee.target.none");
             return 0;
         }
-        source.sendSuccess(() -> Component.literal(
-                "collection targets / 采集对象 (" + catalog.targets().size() + ")"), false);
+        detail(source, "uee.target.header", catalog.targets().size());
         for (TargetDefinition target : catalog.targets().values()) {
-            source.sendSuccess(() -> Component.literal("  " + target.namespace() + ":" + target.id()
-                    + "  [" + target.category().plural() + "]  " + target.selector().describe()),
-                    false);
+            detail(source, "uee.target.entry", target.namespace() + ":" + target.id(),
+                    target.category().plural(), target.selector().describe());
         }
         return catalog.targets().size();
     }
@@ -973,18 +976,16 @@ public final class UeeCommand {
     private static int listStrategies(CommandSourceStack source) {
         DatapackCatalog catalog = Uee.catalog();
         if (catalog.strategies().isEmpty()) {
-            source.sendSuccess(() -> Component.literal(Uee.NAME
-                    + ": no datapack defines an analysis strategy"), false);
+            tell(source, "uee.strategy.none");
             return 0;
         }
-        source.sendSuccess(() -> Component.literal(
-                "analysis strategies / 分析策略 (" + catalog.strategies().size() + ")"), false);
+        detail(source, "uee.strategy.header", catalog.strategies().size());
         for (StrategyDefinition strategy : catalog.strategies().values()) {
-            source.sendSuccess(() -> Component.literal("  " + qualified(strategy)
-                    + "  (" + strategy.rules().size() + " rules"
-                    + (strategy.needsCollection() ? ", needs collection" : "") + ")"), false);
+            detail(source, "uee.strategy.entry", qualified(strategy), strategy.rules().size(),
+                    strategy.needsCollection()
+                            ? org.uee.mc.Ui.lookup("uee.strategy.needsCollection") : "");
             if (strategy.description() != null) {
-                source.sendSuccess(() -> Component.literal("      " + strategy.description()), false);
+                detail(source, "uee.strategy.note", strategy.description());
             }
         }
         return catalog.strategies().size();
@@ -1002,21 +1003,18 @@ public final class UeeCommand {
 
     private static int listDatapacks(CommandSourceStack source) {
         DatapackCatalog catalog = Uee.catalog();
-        source.sendSuccess(() -> Component.literal("datapacks defining UEE content ("
-                + catalog.sources().size() + ")"), false);
+        detail(source, "uee.datapack.header", catalog.sources().size());
         if (catalog.sources().isEmpty()) {
-            source.sendSuccess(() -> Component.literal(
-                    "  none; /uee flow and /uee targets will be empty"), false);
+            detail(source, "uee.datapack.none");
         }
         for (DatapackSource datapack : catalog.sources().values()) {
-            source.sendSuccess(() -> Component.literal("  " + datapack.id()
-                    + "  (" + datapack.origin().token() + ")"
-                    + (datapack.path() == null ? "" : "  " + datapack.path())), false);
+            detail(source, "uee.datapack.entry", datapack.id(), datapack.origin().token(),
+                    datapack.path() == null ? "" : "  " + datapack.path());
         }
         if (!catalog.problems().isEmpty()) {
-            source.sendSuccess(() -> Component.literal("  problems / 问题:"), false);
-            catalog.problems().forEach(p -> source.sendSuccess(() -> Component.literal(
-                    "    [" + p.severity().token() + "] " + p.message()), false));
+            detail(source, "uee.datapack.problems");
+            catalog.problems().forEach(p -> detail(source, "uee.datapack.problemEntry",
+                    p.severity().token(), p.message()));
         }
         return catalog.sources().size();
     }
@@ -1037,19 +1035,17 @@ public final class UeeCommand {
             return 0;
         }
         GlobalPackPolicy policy = Uee.globalPackPolicy(config);
-        source.sendSuccess(() -> Component.literal("global datapacks / 全局数据包"), false);
-        source.sendSuccess(() -> Component.literal("  " + policy.describe()), false);
-        source.sendSuccess(() -> Component.literal("  UEE directory: " + policy.ourDirectory()
-                + "  (" + policy.ourPackCount() + " pack(s))"), false);
+        detail(source, "uee.globalpack.header");
+        detail(source, "uee.globalpack.note", policy.describe());
+        detail(source, "uee.globalpack.ourDir", policy.ourDirectory(), policy.ourPackCount());
         if (policy.deferred()) {
-            source.sendSuccess(() -> Component.literal("  delegated to: "
-                    + policy.deferredTo().name() + " (" + policy.deferredTo().modId() + ")"), false);
-            source.sendSuccess(() -> Component.literal("  its directories: "
-                    + String.join(", ", policy.detected().get(0).directories())), false);
+            detail(source, "uee.globalpack.delegated", policy.deferredTo().name(),
+                    policy.deferredTo().modId());
+            detail(source, "uee.globalpack.itsDirs",
+                    String.join(", ", policy.detected().get(0).directories()));
         }
         for (Finding finding : policy.findings()) {
-            source.sendSuccess(() -> Component.literal(
-                    "  [" + finding.severity().token() + "] " + finding.message()), false);
+            detail(source, "uee.finding.entry", finding.severity().token(), finding.message());
         }
         return 1;
     }
@@ -1060,8 +1056,8 @@ public final class UeeCommand {
         try {
             ExportConfig config = Uee.resolveForRun(ConfigFile.empty()).config();
             for (Finding finding : Uee.globalPackPolicy(config).findings()) {
-                source.sendSuccess(() -> Component.literal(
-                        "  [" + finding.severity().token() + "] " + finding.message()), false);
+                detail(source, "uee.finding.entry", finding.severity().token(),
+                        finding.message());
             }
         } catch (IOException | IllegalStateException e) {
             // The analysis already reported what it could; a config problem here is not new news.
@@ -1074,22 +1070,19 @@ public final class UeeCommand {
     private static int configShow(CommandSourceStack source) {
         try {
             ExportConfig config = Uee.resolveForRun(ConfigFile.empty()).config();
-            source.sendSuccess(() -> Component.literal("effective configuration / 生效配置"), false);
-            source.sendSuccess(() -> Component.literal("  output:  " + config.outputDir()), false);
-            source.sendSuccess(() -> Component.literal(
-                    "  formats: " + String.join(", ", config.formats())), false);
-            source.sendSuccess(() -> Component.literal(
-                    "  kinds:   " + config.kinds().size() + " categories"), false);
-            source.sendSuccess(() -> Component.literal("  analyze: " + config.analyze()
-                    + (config.analyze() ? " (separate=" + config.analysisSeparate() + ")" : "")),
-                    false);
-            source.sendSuccess(() -> Component.literal("  layout:  packagePerKind="
-                    + config.packagePerKind() + " shardByNamespace=" + config.shardByNamespace()),
-                    false);
-            source.sendSuccess(() -> Component.literal("  icons:   " + config.icons()), false);
+            detail(source, "uee.config.effective");
+            detail(source, "uee.config.output", config.outputDir());
+            detail(source, "uee.config.formats", String.join(", ", config.formats()));
+            detail(source, "uee.config.kinds", config.kinds().size());
+            detail(source, "uee.config.analyze", config.analyze()
+                    ? org.uee.mc.Ui.lookup("uee.config.analysisYes") : "");
+            detail(source, "uee.config.shardByNamespace", config.packagePerKind(),
+                    config.shardByNamespace());
+            detail(source, "uee.config.icons", config.icons());
             Path file = Uee.configFile();
             if (file != null) {
-                source.sendSuccess(() -> Component.literal("  config:  ").append(link(source, file)), false);
+                source.sendSuccess(() -> org.uee.mc.Ui.t("uee.status.config").copy()
+                        .append(link(source, file)), false);
             }
             return 1;
         } catch (IOException | IllegalStateException e) {
@@ -1101,10 +1094,11 @@ public final class UeeCommand {
     private static int configPath(CommandSourceStack source) {
         Path file = Uee.configFile();
         if (file == null) {
-            source.sendFailure(Component.literal(Uee.NAME + ": no adapter bound"));
+            refuse(source, "uee.cmd.noAdapter");
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("config file: ").append(link(source, file)), false);
+        source.sendSuccess(() -> org.uee.mc.Ui.t("uee.config.file").copy()
+                .append(link(source, file)), false);
         return 1;
     }
 
@@ -1123,9 +1117,8 @@ public final class UeeCommand {
     private static int declareAssetKind(CommandSourceStack source, String name, boolean add) {
         String kind = name == null ? "" : name.trim().toLowerCase(java.util.Locale.ROOT);
         if (add && !org.uee.asset.AssetSweep.isValidKind(kind)) {
-            source.sendFailure(Component.literal(Uee.NAME + ": '" + name
-                    + "' cannot be swept as a kind; it has to be one path segment of lower-case letters,"
-                    + " digits, '_', '-' or '.', and must not begin with a dot"));
+            refuse(source, "uee.declare.badKind", name,
+                    org.uee.mc.Ui.lookup("uee.declare.kindWhy"));
             return 0;
         }
         try {
@@ -1134,16 +1127,20 @@ public final class UeeCommand {
                     Uee.declared(config, org.uee.asset.AssetSweep.TABLE));
             boolean changed = add ? addIfAbsent(kinds, kind) : kinds.remove(kind);
             if (!changed) {
-                report(source, add ? "already declared: " + kind : "not declared: " + kind);
+                report(source, org.uee.mc.Ui.format(add ? "uee.declare.alreadyDeclared"
+                        : "uee.declare.notDeclared", kind));
                 return 0;
             }
             Uee.declare(config, org.uee.asset.AssetSweep.TABLE, kinds);
             int total = org.uee.asset.AssetSweep.merge(kinds).size();
-            report(source, (add ? "declared asset kind " + kind : "removed asset kind " + kind)
-                    + "; the sweep now covers " + total + " kind(s)");
+            // Two whole literals rather than one built by concatenation: a key assembled at runtime is
+            // invisible to the check that every defined entry is used, which is what stops dead entries
+            // accumulating.
+            report(source, org.uee.mc.Ui.format(add ? "uee.declare.addedKind" : "uee.declare.removedKind",
+                    kind, total));
             return 1;
         } catch (java.io.IOException | IllegalStateException e) {
-            source.sendFailure(Component.literal(Uee.NAME + ": could not write the declaration: " + e));
+            refuse(source, "uee.declare.couldNotWrite", e);
             return 0;
         }
     }
@@ -1157,9 +1154,9 @@ public final class UeeCommand {
      */
     private static int declareAssetRootFile(CommandSourceStack source, String name, boolean add) {
         return declareInTable(source, name, add, org.uee.asset.AssetSweep.ROOT_FILE_TABLE,
-                "asset root file", org.uee.asset.AssetSweep::isValidRootFile,
-                "it has to be a bare file name of lower-case letters, digits, '_', '-' or '.', with no"
-                        + " directory separator, since it is fetched by name and not by prefix");
+                org.uee.mc.Ui.lookup("uee.declare.rootFileName"),
+                org.uee.asset.AssetSweep::isValidRootFile,
+                org.uee.mc.Ui.lookup("uee.declare.rootFileWhy"));
     }
 
     /**
@@ -1178,8 +1175,7 @@ public final class UeeCommand {
             String table, String what, java.util.function.Predicate<String> valid, String why) {
         String value = name == null ? "" : name.trim().toLowerCase(java.util.Locale.ROOT);
         if (add && !valid.test(value)) {
-            source.sendFailure(Component.literal(Uee.NAME + ": '" + name + "' cannot be used as a "
-                    + what + "; " + why));
+            refuse(source, "uee.declare.badKind", name + " (" + what + ")", why);
             return 0;
         }
         try {
@@ -1187,15 +1183,18 @@ public final class UeeCommand {
             java.util.List<String> values = new java.util.ArrayList<>(Uee.declared(config, table));
             boolean changed = add ? addIfAbsent(values, value) : values.remove(value);
             if (!changed) {
-                report(source, add ? "already declared: " + value : "not declared: " + value);
+                report(source, org.uee.mc.Ui.format(add ? "uee.declare.alreadyDeclared"
+                        : "uee.declare.notDeclared", value));
                 return 0;
             }
             Uee.declare(config, table, values);
-            report(source, (add ? "declared " + what + " " + value : "removed " + what + " " + value)
-                    + "; " + table + " now holds " + values.size());
+            report(source, org.uee.mc.Ui.format("uee.declare.changed",
+                    add ? org.uee.mc.Ui.lookup("uee.declare.addedRootFile")
+                            : org.uee.mc.Ui.lookup("uee.declare.removedRootFile"),
+                    what + " " + value, table, values.size()));
             return 1;
         } catch (java.io.IOException | IllegalStateException e) {
-            source.sendFailure(Component.literal(Uee.NAME + ": could not write the declaration: " + e));
+            refuse(source, "uee.declare.couldNotWrite", e);
             return 0;
         }
     }
@@ -1221,24 +1220,24 @@ public final class UeeCommand {
         try {
             ExportConfig config = Uee.resolveForRun(ConfigFile.empty()).config();
             java.util.List<String> declared = Uee.declared(config, org.uee.asset.AssetSweep.TABLE);
-            report(source, "asset kinds: " + org.uee.asset.AssetSweep.KINDS.size() + " built in, "
-                    + declared.size() + " declared");
+            report(source, org.uee.mc.Ui.format("uee.declare.assetKinds",
+                    org.uee.asset.AssetSweep.KINDS.size(), declared.size()));
             for (String kind : declared) {
                 report(source, "  + " + kind);
             }
             if (declared.isEmpty()) {
-                report(source, "  nothing declared; /uee declare asset-kind <name> adds one");
+                report(source, org.uee.mc.Ui.lookup("uee.declare.none"));
             }
             java.util.List<String> rootFiles = Uee.declared(config,
                     org.uee.asset.AssetSweep.ROOT_FILE_TABLE);
-            report(source, "root files: " + org.uee.asset.AssetSweep.ROOT_FILES.size()
-                    + " built in, " + rootFiles.size() + " declared");
+            report(source, org.uee.mc.Ui.format("uee.declare.rootFiles",
+                    org.uee.asset.AssetSweep.ROOT_FILES.size(), rootFiles.size()));
             for (String file : rootFiles) {
                 report(source, "  + " + file);
             }
-            report(source, "the sweep covers "
-                    + org.uee.asset.AssetSweep.merge(declared).size() + " kind(s) and "
-                    + org.uee.asset.AssetSweep.mergeRootFiles(rootFiles).size() + " root file(s)");
+            report(source, org.uee.mc.Ui.format("uee.declare.sweepCovers",
+                    org.uee.asset.AssetSweep.merge(declared).size(),
+                    org.uee.asset.AssetSweep.mergeRootFiles(rootFiles).size()));
             return declared.size() + rootFiles.size();
         } catch (java.io.IOException | IllegalStateException e) {
             source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
@@ -1250,9 +1249,9 @@ public final class UeeCommand {
         try {
             ExportConfig config = Uee.resolveForRun(ConfigFile.empty()).config();
             Path file = Uee.userStateFile(config);
-            report(source, "declarations and settings are kept in " + file);
-            report(source, "set 'user_dir' or the " + org.uee.state.UserStore.DIR_ENV
-                    + " environment variable to move it");
+            report(source, org.uee.mc.Ui.format("uee.declare.whereIsIt", file));
+            report(source, org.uee.mc.Ui.format("uee.declare.moveIt",
+                    org.uee.state.UserStore.DIR_ENV));
             return 1;
         } catch (java.io.IOException | IllegalStateException e) {
             source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
@@ -1264,11 +1263,11 @@ public final class UeeCommand {
         try {
             ExportConfig config = Uee.resolveForRun(ConfigFile.empty()).config();
             Path file = Uee.writeConfig(config);
-            source.sendSuccess(() -> Component.literal(Uee.NAME
-                    + ": wrote the effective configuration to ").append(link(source, file)), false);
+            source.sendSuccess(() -> line("uee.config.wroteEffective", "").copy()
+                    .append(link(source, file)), false);
             return 1;
         } catch (IOException | IllegalStateException e) {
-            source.sendFailure(Component.literal(Uee.NAME + ": " + e));
+            source.sendFailure(line("uee.cmd.failed", e));
             return 0;
         }
     }
@@ -1282,10 +1281,9 @@ public final class UeeCommand {
         try {
             Files.createDirectories(file.getParent());
             Files.writeString(file, ConfigFile.template());
-            source.sendSuccess(() -> Component.literal(Uee.NAME
-                    + ": wrote the annotated default configuration to ").append(link(source, file)), false);
-            source.sendSuccess(() -> Component.literal(
-                    "  every key is documented in place; edit it and run /uee config reload"), false);
+            source.sendSuccess(() -> line("uee.config.wroteTemplate", "").copy()
+                    .append(link(source, file)), false);
+            detail(source, "uee.config.templateNote");
             return 1;
         } catch (IOException e) {
             source.sendFailure(Component.literal(Uee.NAME + ": " + e));
@@ -1296,7 +1294,7 @@ public final class UeeCommand {
     private static int configReload(CommandSourceStack source) {
         Path file = Uee.configFile();
         if (file == null) {
-            source.sendFailure(Component.literal(Uee.NAME + ": no adapter bound"));
+            refuse(source, "uee.cmd.noAdapter");
             return 0;
         }
         try {
@@ -1307,17 +1305,16 @@ public final class UeeCommand {
                 }
                 return 0;
             }
-            source.sendSuccess(() -> Component.literal(Uee.NAME + ": reloaded ").append(link(source, file)),
-                    false);
+            source.sendSuccess(() -> line("uee.config.reloaded", "").copy()
+                    .append(link(source, file)), false);
             for (String warning : r.warnings()) {
-                source.sendSuccess(() -> Component.literal("  warning: " + warning), false);
+                detail(source, "uee.status.warning", warning);
             }
-            source.sendSuccess(() -> Component.literal("  formats: "
-                    + String.join(", ", r.config().formats()) + " / "
-                    + r.config().kinds().size() + " categories"), false);
+            detail(source, "uee.config.reloadSummary",
+                    String.join(", ", r.config().formats()), r.config().kinds().size());
             return 1;
         } catch (IOException e) {
-            source.sendFailure(Component.literal(Uee.NAME + ": could not read " + file + ": " + e));
+            refuse(source, "uee.config.couldNotRead", file, e);
             return 0;
         }
     }
@@ -1326,43 +1323,24 @@ public final class UeeCommand {
 
     private static int help(CommandSourceStack source, String name) {
         String p = "/" + name;
-        source.sendSuccess(() -> Component.literal(Uee.NAME + " — multi-loader element exporter"),
-                false);
-        source.sendSuccess(() -> Component.literal(
-                "  " + p + "                      export with the default settings"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  " + p + " export [kinds]       choose which categories to export"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  " + p + " formats <formats>    choose the output format(s)"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  " + p + " data | analysis       only one half of a run"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  " + p + " analyze               run the checks that need no export"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  " + p + " flow <name>           run a datapack-defined flow"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  " + p + " export async [kinds]  start an export and return at once"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  " + p + " jobs                  unfinished jobs; poll until 0"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  " + p + " job <id> [cancel]     inspect or cancel a job"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  " + p + " flows | targets | strategies | datapacks"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  " + p + " globalpack            who provides global datapacks"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  " + p + " kinds | formats       list the accepted tokens"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  " + p + " status                loader, version, effective defaults"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  " + p + " set <what> …        override a setting for this session"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  " + p + " config show|path|save|template|reload"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  categories: " + Tokens.groups() + ", or any name from " + p + " kinds"), false);
-        source.sendSuccess(() -> Component.literal(
-                "  callable from " + Uee.functionFlowPattern() + "; use 'export async' there so the"
-                        + " tick is not held"), false);
+        detail(source, "uee.help.title", Uee.NAME);
+        detail(source, "uee.help.export", p);
+        detail(source, "uee.help.exportKinds", p);
+        detail(source, "uee.help.formats", p);
+        detail(source, "uee.help.halves", p);
+        detail(source, "uee.help.analyze", p);
+        detail(source, "uee.help.flow", p);
+        detail(source, "uee.help.exportAsync", p);
+        detail(source, "uee.help.jobs", p);
+        detail(source, "uee.help.job", p);
+        detail(source, "uee.help.lists", p);
+        detail(source, "uee.help.globalpack", p);
+        detail(source, "uee.help.tokens", p);
+        detail(source, "uee.help.status", p);
+        detail(source, "uee.help.set", p);
+        detail(source, "uee.help.config", p);
+        detail(source, "uee.help.categories", Tokens.groups(), p);
+        detail(source, "uee.help.callable", Uee.functionFlowPattern());
         return 1;
     }
 }
