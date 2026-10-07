@@ -74,6 +74,16 @@ public final class AssetSweep {
     public static final List<String> ROOT_FILES = List.of("sounds.json");
 
     /**
+     * The declaration table holding additional root files.
+     *
+     * <p>Separate from the kinds because they are a different question: a kind is a directory to walk, a
+     * root file is a single file with no directory to walk into. They share a mechanism — both are things
+     * the sweep cannot find on its own and a person can — and nothing else, so they are declared separately
+     * and counted separately.
+     */
+    public static final String ROOT_FILE_TABLE = "assetRootFiles";
+
+    /**
      * The declaration table holding additional kinds.
      *
      * <p>A table rather than a configuration key, because this is knowledge about packs rather than a
@@ -118,6 +128,32 @@ public final class AssetSweep {
     }
 
     /**
+     * Whether a name may be declared as a root file.
+     *
+     * <p>A root file has to be a bare file name: it is fetched by whole resource location, and anything with
+     * a separator would be a path the by-name route cannot express. The failure would again be silence — a
+     * name that cannot be fetched finds nothing and looks like a file that is not there.
+     */
+    public static boolean isValidRootFile(String name) {
+        if (name == null || name.isEmpty()) {
+            return false;
+        }
+        if (name.contains("/") || name.contains("\\") || name.startsWith(".")) {
+            return false;
+        }
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            boolean fine = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-'
+                    || c == '.';
+            if (!fine) {
+                return false;
+            }
+        }
+        // It has to be usable at a namespace root, which is what the by-name fetch builds.
+        return AssetPath.isCopyable(name) && AssetPath.outputPath("probe", name) != null;
+    }
+
+    /**
      * The kinds to sweep: the built-in list with the declared ones added.
      *
      * <p>Built-ins first and in their own order, since they are what the list looked like before anyone
@@ -149,9 +185,29 @@ public final class AssetSweep {
         return kind;
     }
 
+    /**
+     * The root files to fetch: the built-in list with the declared ones added.
+     *
+     * <p>Same rules as {@link #merge} — built-ins first, additions sorted, duplicates dropped — because it
+     * is the same kind of list, and a second set of rules would be a second thing to get wrong.
+     */
+    public static List<String> mergeRootFiles(List<String> declared) {
+        java.util.LinkedHashSet<String> files = new java.util.LinkedHashSet<>(ROOT_FILES);
+        if (declared != null) {
+            java.util.TreeSet<String> additions = new java.util.TreeSet<>();
+            for (String name : declared) {
+                if (isValidRootFile(name) && !files.contains(name)) {
+                    additions.add(name);
+                }
+            }
+            files.addAll(additions);
+        }
+        return List.copyOf(files);
+    }
+
     /** A line naming the basis, for a report that has one line to spend on it. */
     public static String describe() {
-        return describe(KINDS.size());
+        return describe(KINDS.size(), ROOT_FILES.size());
     }
 
     /**
@@ -161,7 +217,12 @@ public final class AssetSweep {
      * that said "nine plus three" would need a second number to be useful.
      */
     public static String describe(int totalKinds) {
-        return totalKinds + " kinds + " + ROOT_FILES.size() + " root file"
-                + (ROOT_FILES.size() == 1 ? "" : "s");
+        return describe(totalKinds, ROOT_FILES.size());
+    }
+
+    /** The same line, for a sweep that covered more of either. */
+    public static String describe(int totalKinds, int totalRootFiles) {
+        return totalKinds + " kinds + " + totalRootFiles + " root file"
+                + (totalRootFiles == 1 ? "" : "s");
     }
 }

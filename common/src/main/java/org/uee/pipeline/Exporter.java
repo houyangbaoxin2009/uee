@@ -119,6 +119,9 @@ public final class Exporter implements ElementSink {
      */
     private int assetKinds;
 
+    /** The same, for the root files, cached for the same reason. */
+    private int assetRootFiles;
+
     /** Assets offered for copying, how many were written, and how many were recognised as unchanged. */
     private int assetCount;
     private int assetCopied;
@@ -841,7 +844,8 @@ public final class Exporter implements ElementSink {
         // The basis of the sweep, said out loud. A directory outside the declared kinds is not swept and
         // cannot be discovered, so the report names what was asked for rather than leaving a shortfall to
         // be puzzled over.
-        sb.append(" over ").append(org.uee.asset.AssetSweep.describe(assetKindCount()));
+        sb.append(" over ").append(org.uee.asset.AssetSweep.describe(assetKindCount(),
+                assetRootFileCount()));
         return sb.toString();
     }
 
@@ -858,6 +862,14 @@ public final class Exporter implements ElementSink {
                     org.uee.Uee.declared(config, org.uee.asset.AssetSweep.TABLE)).size();
         }
         return assetKinds;
+    }
+
+    private int assetRootFileCount() {
+        if (assetRootFiles == 0) {
+            assetRootFiles = org.uee.asset.AssetSweep.mergeRootFiles(
+                    org.uee.Uee.declared(config, org.uee.asset.AssetSweep.ROOT_FILE_TABLE)).size();
+        }
+        return assetRootFiles;
     }
 
     /** One element that could not be collected. */

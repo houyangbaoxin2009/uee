@@ -550,6 +550,9 @@ public final class UeeGameTests {
             writeAsset(packRoot, "assets/example/lang/zh_cn.json", "{\"item.example.ruby\":\"ruby\"}");
             // A file directly under the namespace, reached by name rather than by prefix.
             writeAsset(packRoot, "assets/example/sounds.json", "{\"block.ruby\":{}}");
+            // A second file at the namespace root, which the built-in list does not name. Nothing reaches it
+            // until it is declared, which is what the second half of this test establishes.
+            writeAsset(packRoot, "assets/example/credits.json", "{\"staff\":[]}");
             // The pack build's marker, which must not be copied: it has no namespace.
             writeAsset(packRoot, "assets/.mcassetsroot", "");
             // A directory the sweep does not name. It is deliberately not collected, and the assertion
@@ -623,6 +626,28 @@ public final class UeeGameTests {
                             after.assets.stream().anyMatch(a -> a.contains("invented_kind")),
                             "a declared kind was still not swept, so the declaration reaches nothing: "
                                     + after.assets);
+
+                    // A root file goes by a different route from a kind -- it is fetched by whole resource
+                    // location rather than by prefix -- so the declaration has to be shown to reach that
+                    // route too. Before declaring it, nothing fetches it.
+                    helper.assertTrue(
+                            after.assets.stream().noneMatch(a -> a.endsWith("credits.json")),
+                            "a root file outside the built-in list was fetched before being declared: "
+                                    + after.assets);
+
+                    Uee.declare(declaring, org.uee.asset.AssetSweep.ROOT_FILE_TABLE,
+                            java.util.List.of("credits.json"));
+                    RecordingSink withRootFile = new RecordingSink();
+                    adapter.collectAssets(declaring, withRootFile);
+                    helper.assertTrue(
+                            withRootFile.assets.stream().anyMatch(a -> a.endsWith("credits.json")),
+                            "a declared root file was still not fetched, so the declaration reaches only the"
+                                    + " directory route: " + withRootFile.assets);
+                    // And the built-in root file is still fetched, since the declared list adds rather than
+                    // replaces.
+                    helper.assertTrue(
+                            withRootFile.assets.stream().anyMatch(a -> a.endsWith("sounds.json")),
+                            "declaring one root file dropped the built-in one: " + withRootFile.assets);
                 } finally {
                     deleteRecursively(stateDir);
                 }

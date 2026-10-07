@@ -1117,8 +1117,9 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
                 sink.failure(null, AssetPath.DIRECTORY + "/" + kind, t);
             }
         }
-        // And the files that have no directory to be found under, fetched by name.
-        for (String rootFile : AssetSweep.ROOT_FILES) {
+        // And the files that have no directory to be found under, fetched by name — the built-in list plus
+        // whatever the user declared, for the same reason and by the same route as the kinds above.
+        for (String rootFile : AssetSweep.mergeRootFiles(declaredAssetRootFiles(config))) {
             for (String namespace : manager.getNamespaces()) {
                 ResourceLocation id = ResourceLocation.fromNamespaceAndPath(namespace, rootFile);
                 manager.getResource(id).ifPresent(resource -> files.put(id, resource));
@@ -1170,9 +1171,27 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
      * swept and never a sweep that does not happen.
      */
     private static java.util.List<String> declaredAssetKinds(ExportConfig config) {
+        return declared(AssetSweep.TABLE, config);
+    }
+
+    /**
+     * The asset root files the user has declared, or an empty list.
+     *
+     * <p>The same route as the kinds, including the same reason for going through the run's configuration:
+     * the state file's location is configurable, and reading it through a fresh configuration would look in
+     * the default place while the declaring command looked wherever the setting said.
+     */
+    private static java.util.List<String> declaredAssetRootFiles(ExportConfig config) {
+        return declared(AssetSweep.ROOT_FILE_TABLE, config);
+    }
+
+    /** One declaration table for the sweep, or an empty list when it cannot be read. */
+    private static java.util.List<String> declared(String table, ExportConfig config) {
         try {
-            return org.uee.Uee.declared(config, AssetSweep.TABLE);
+            return org.uee.Uee.declared(config, table);
         } catch (Throwable t) {
+            // The declared entries are an addition to the built-in lists and never a replacement for them,
+            // so an unreadable state file means fewer entries and never a sweep that does not happen.
             return java.util.List.of();
         }
     }

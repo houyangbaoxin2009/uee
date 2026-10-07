@@ -43,6 +43,7 @@ public final class AssetTest {
         whatIsNotContent();
         theDeclaredSweep();
         declaredKindsExtendTheSweep(root.resolve("declared"));
+        declaredRootFilesExtendTheSweep(root.resolve("declared-files"));
         copying(root.resolve("copy"));
 
         System.out.println();
@@ -289,6 +290,73 @@ public final class AssetTest {
 
         check("the basis can name a larger total",
                 AssetSweep.describe(12).startsWith("12 kinds"));
+    }
+
+    // ---------------------------------------------------------------- declared root files
+
+    /**
+     * A declared root file is fetched, by the same route and for the same reason as a declared kind.
+     *
+     * <p>Separately tested because the two lists reach the sweep differently: a kind becomes a prefix to
+     * walk, a root file becomes a whole resource location to ask for by name. A declaration that reached one
+     * route and not the other would look like it worked, since the report counts both.
+     */
+    private static void declaredRootFilesExtendTheSweep(Path dir) throws IOException {
+        section("declared root files");
+
+        check("with nothing declared the list is the built-in one",
+                AssetSweep.mergeRootFiles(List.of()).equals(AssetSweep.ROOT_FILES));
+        check("and null is the same as empty",
+                AssetSweep.mergeRootFiles(null).equals(AssetSweep.ROOT_FILES));
+
+        List<String> withExtra = AssetSweep.mergeRootFiles(List.of("credits.json", "sounds.json"));
+        check("a declared root file is added", withExtra.contains("credits.json"));
+        check("the built-in one is still there", withExtra.contains("sounds.json"));
+        check("and one that is already built in is not duplicated",
+                withExtra.size() == AssetSweep.ROOT_FILES.size() + 1);
+
+        // A root file is fetched by name, so anything with a separator could never be asked for; storing it
+        // would mean a declaration that silently fetches nothing.
+        check("a name with a separator is refused", !AssetSweep.isValidRootFile("sub/sounds.json"));
+        check("a leading slash too", !AssetSweep.isValidRootFile("/sounds.json"));
+        check("a dotfile-looking name is refused", !AssetSweep.isValidRootFile(".hidden"));
+        check("an empty name is refused", !AssetSweep.isValidRootFile(""));
+        check("and null", !AssetSweep.isValidRootFile(null));
+        check("upper case is refused", !AssetSweep.isValidRootFile("Sounds.json"));
+        check("while an ordinary file name is accepted", AssetSweep.isValidRootFile("credits.json"));
+        check("and one with digits and dashes too", AssetSweep.isValidRootFile("v2-credits.json"));
+        check("an unusable name in the table is skipped rather than fetched",
+                AssetSweep.mergeRootFiles(List.of("ok.json", "bad/name.json")).size()
+                        == AssetSweep.ROOT_FILES.size() + 1);
+
+        // Through the store, exactly as the kinds are: the write path is what the command uses, and a table
+        // that could be read but not written would be the dead-table mistake in its other direction.
+        ExportConfig config = ExportConfig.builder().userDir(dir).build();
+        check("nothing is declared to begin with",
+                Uee.declared(config, AssetSweep.ROOT_FILE_TABLE).isEmpty());
+        Uee.declare(config, AssetSweep.ROOT_FILE_TABLE, List.of("credits.json"));
+        check("the declaration survives being written and read",
+                Uee.declared(config, AssetSweep.ROOT_FILE_TABLE).equals(List.of("credits.json")));
+        check("and the sweep covers it",
+                AssetSweep.mergeRootFiles(Uee.declared(config, AssetSweep.ROOT_FILE_TABLE))
+                        .contains("credits.json"));
+
+        // The two tables are independent, both in the file and in what they mean.
+        Uee.declare(config, AssetSweep.TABLE, List.of("cutscenes"));
+        check("the two tables do not overwrite each other",
+                Uee.declared(config, AssetSweep.TABLE).equals(List.of("cutscenes"))
+                        && Uee.declared(config, AssetSweep.ROOT_FILE_TABLE)
+                                .equals(List.of("credits.json")));
+        Uee.declare(config, AssetSweep.ROOT_FILE_TABLE, List.of());
+        check("clearing one leaves the other",
+                Uee.declared(config, AssetSweep.TABLE).equals(List.of("cutscenes"))
+                        && Uee.declared(config, AssetSweep.ROOT_FILE_TABLE).isEmpty());
+
+        check("the basis can name both totals",
+                AssetSweep.describe(11, 3).equals("11 kinds + 3 root files"));
+        check("and one root file reads singular",
+                AssetSweep.describe(9, 1).startsWith("9 kinds + 1 root file ")
+                        || AssetSweep.describe(9, 1).equals("9 kinds + 1 root file"));
     }
 
     // ---------------------------------------------------------------- copying

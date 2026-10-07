@@ -288,6 +288,14 @@ public final class UeeCommand {
                         .then(Commands.literal("no-asset-kind")
                                 .then(Commands.argument("name", StringArgumentType.word())
                                         .executes(ctx -> declareAssetKind(ctx.getSource(),
+                                                arg(ctx, "name"), false))))
+                        .then(Commands.literal("asset-root-file")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .executes(ctx -> declareAssetRootFile(ctx.getSource(),
+                                                arg(ctx, "name"), true))))
+                        .then(Commands.literal("no-asset-root-file")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .executes(ctx -> declareAssetRootFile(ctx.getSource(),
                                                 arg(ctx, "name"), false)))))
                 .then(Commands.literal("config")
                         .executes(ctx -> configShow(ctx.getSource()))
@@ -1072,6 +1080,58 @@ public final class UeeCommand {
         }
     }
 
+    /**
+     * Adds or removes a declared asset root file.
+     *
+     * <p>The same shape as the kind verb, and for the same reason: a file at a namespace root has no prefix
+     * that reaches it, so the tool cannot find it and a person can. The two differ only in which table they
+     * write and what a legal name looks like, so both go through {@link declareInTable}.
+     */
+    private static int declareAssetRootFile(CommandSourceStack source, String name, boolean add) {
+        return declareInTable(source, name, add, org.uee.asset.AssetSweep.ROOT_FILE_TABLE,
+                "asset root file", org.uee.asset.AssetSweep::isValidRootFile,
+                "it has to be a bare file name of lower-case letters, digits, '_', '-' or '.', with no"
+                        + " directory separator, since it is fetched by name and not by prefix");
+    }
+
+    /**
+     * Writes one declaration table: the shared part of every declare verb.
+     *
+     * <p>Shared rather than repeated because the parts that matter are the ones easy to get wrong — refusing
+     * an unusable name before storing it, not losing the other tables, reporting the new total — and a
+     * second copy of them would be a second place for them to drift.
+     *
+     * @param table which declaration table to write
+     * @param what how to name the kind of thing, for the messages
+     * @param valid what makes a name usable; an unusable one is refused rather than stored
+     * @param why the reason given when a name is refused
+     */
+    private static int declareInTable(CommandSourceStack source, String name, boolean add,
+            String table, String what, java.util.function.Predicate<String> valid, String why) {
+        String value = name == null ? "" : name.trim().toLowerCase(java.util.Locale.ROOT);
+        if (add && !valid.test(value)) {
+            source.sendFailure(Component.literal(Uee.NAME + ": '" + name + "' cannot be used as a "
+                    + what + "; " + why));
+            return 0;
+        }
+        try {
+            ExportConfig config = Uee.resolveForRun(ConfigFile.empty()).config();
+            java.util.List<String> values = new java.util.ArrayList<>(Uee.declared(config, table));
+            boolean changed = add ? addIfAbsent(values, value) : values.remove(value);
+            if (!changed) {
+                report(source, add ? "already declared: " + value : "not declared: " + value);
+                return 0;
+            }
+            Uee.declare(config, table, values);
+            report(source, (add ? "declared " + what + " " + value : "removed " + what + " " + value)
+                    + "; " + table + " now holds " + values.size());
+            return 1;
+        } catch (java.io.IOException | IllegalStateException e) {
+            source.sendFailure(Component.literal(Uee.NAME + ": could not write the declaration: " + e));
+            return 0;
+        }
+    }
+
     /** Adds a name if it is not there. Sorted insertion, so a table reads in a stable order. */
     private static boolean addIfAbsent(java.util.List<String> names, String name) {
         if (names.contains(name)) {
@@ -1101,9 +1161,17 @@ public final class UeeCommand {
             if (declared.isEmpty()) {
                 report(source, "  nothing declared; /uee declare asset-kind <name> adds one");
             }
+            java.util.List<String> rootFiles = Uee.declared(config,
+                    org.uee.asset.AssetSweep.ROOT_FILE_TABLE);
+            report(source, "root files: " + org.uee.asset.AssetSweep.ROOT_FILES.size()
+                    + " built in, " + rootFiles.size() + " declared");
+            for (String file : rootFiles) {
+                report(source, "  + " + file);
+            }
             report(source, "the sweep covers "
-                    + org.uee.asset.AssetSweep.merge(declared).size() + " kind(s)");
-            return declared.size();
+                    + org.uee.asset.AssetSweep.merge(declared).size() + " kind(s) and "
+                    + org.uee.asset.AssetSweep.mergeRootFiles(rootFiles).size() + " root file(s)");
+            return declared.size() + rootFiles.size();
         } catch (java.io.IOException | IllegalStateException e) {
             source.sendFailure(Component.literal(Uee.NAME + ": " + e.getMessage()));
             return 0;
