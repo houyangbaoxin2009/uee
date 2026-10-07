@@ -33,6 +33,9 @@ public final class AnalysisEngine {
         // Pre-collection: loader metadata and mod containers only.
         all.add(new ContainerAnalysis());
         all.add(new DependencyAnalysis());
+        // After the dependency graph, because it builds on the same edges and adds what they do not say:
+        // versions that do not match, loops, and jars built for something else.
+        all.add(new CompatibilityAnalysis());
         all.add(new MixinAnalysis());
         all.add(new NamespaceClaimsAnalysis());
         // Post-collection: needs the registry walk to have happened.

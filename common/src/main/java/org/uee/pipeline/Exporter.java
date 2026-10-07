@@ -179,7 +179,9 @@ public final class Exporter implements ElementSink {
         // The gathering half of the decoupling: collectors write facts here and never learn what
         // reads them.
         this.context = new AnalysisContext(adapter.mods(), adapter.containers(),
-                adapter.mixinConfigs(), config.includePaths());
+                adapter.mixinConfigs(), config.includePaths(),
+                adapter.info() == null ? null : adapter.info().loader(),
+                adapter.info() == null ? null : adapter.info().minecraftVersion());
     }
 
     /**

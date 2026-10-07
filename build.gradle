@@ -397,6 +397,19 @@ tasks.register('userStoreTest', JavaExec) {
 }
 
 /**
+ * Runs the compatibility checks: version ranges, requiring cycles, and jars built for another loader or
+ * another game version.
+ */
+tasks.register('compatibilityTest', JavaExec) {
+    description = 'Runs the compatibility and version-comparison checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.CompatibilityTest'
+    args = [layout.buildDirectory.dir('compatibility-test').get().asFile.absolutePath]
+}
+
+/**
  * Runs the checks that a generated configuration file is where the report says it is and can be read back.
  *
  * <p>Reported from a real session as "it says it wrote the file and there is nothing there", which is the
@@ -435,5 +448,5 @@ tasks.register('verifyAll') {
             'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest', 'scaleTest',
             'tagTest', 'lootTableTest', 'iconTest', 'categoryTest', 'advancementTest',
             'worldgenTest', 'mcfunctionTest', 'deltaTest', 'assetTest', 'classLoaderTest',
-            'registrationOrderTest', 'userStoreTest', 'uiTextTest', 'configWriteTest'
+            'registrationOrderTest', 'userStoreTest', 'uiTextTest', 'configWriteTest', 'compatibilityTest'
 }

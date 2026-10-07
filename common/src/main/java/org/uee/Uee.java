@@ -669,7 +669,8 @@ public final class Uee {
     public static int analyzeWithoutCollecting(Consumer<Finding> sink) throws IOException {
         LoaderAdapter current = requireAdapter();
         AnalysisContext context = new AnalysisContext(current.mods(), current.containers(),
-                current.mixinConfigs(), false);
+                current.mixinConfigs(), false, current.info().loader(),
+                current.info().minecraftVersion());
         return AnalysisEngine.standard().runWithoutCollection(context, sink::accept);
     }
 

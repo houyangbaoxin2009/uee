@@ -53,6 +53,17 @@ public final class AnalysisContext {
     private final List<MixinConfig> mixins;
     private final boolean includePaths;
 
+    /**
+     * What is running, as opposed to what the mods say they were built for.
+     *
+     * <p>Needed to answer the questions a pack author actually has: a jar built for another loader, or for
+     * another game version, is a real problem and is invisible without something to compare against. Both
+     * may be null, which is the case in a test and the reason every check that reads them has to tolerate
+     * not knowing rather than falling back to a guess.
+     */
+    private final String runningLoader;
+    private final String runningMinecraft;
+
     private final Map<ElementKind, Integer> counted = new EnumMap<>(ElementKind.class);
     private final Map<ElementKind, Integer> filtered = new EnumMap<>(ElementKind.class);
     private final Map<ElementKind, Map<String, Integer>> byNamespace = new EnumMap<>(ElementKind.class);
@@ -61,10 +72,36 @@ public final class AnalysisContext {
     public AnalysisContext(List<ModElement> mods,
             Map<String, ModContainerScanner.ContainerInfo> containers,
             List<MixinConfig> mixins, boolean includePaths) {
+        this(mods, containers, mixins, includePaths, null, null);
+    }
+
+    /**
+     * The same, told what is running.
+     *
+     * @param runningLoader the loader in use, or null when nothing is running
+     * @param runningMinecraft the game version in use, or null when nothing is running
+     */
+    public AnalysisContext(List<ModElement> mods,
+            Map<String, ModContainerScanner.ContainerInfo> containers,
+            List<MixinConfig> mixins, boolean includePaths,
+            String runningLoader, String runningMinecraft) {
         this.mods = mods == null ? List.of() : List.copyOf(mods);
         this.containers = containers == null ? Map.of() : Map.copyOf(containers);
         this.mixins = mixins == null ? List.of() : List.copyOf(mixins);
         this.includePaths = includePaths;
+        this.runningLoader = runningLoader == null || runningLoader.isBlank() ? null : runningLoader;
+        this.runningMinecraft = runningMinecraft == null || runningMinecraft.isBlank()
+                ? null : runningMinecraft;
+    }
+
+    /** The loader in use, or null when nothing is running. */
+    public String runningLoader() {
+        return runningLoader;
+    }
+
+    /** The game version in use, or null when nothing is running. */
+    public String runningMinecraft() {
+        return runningMinecraft;
     }
 
     // ---------------------------------------------------------------- pre-collection facts
