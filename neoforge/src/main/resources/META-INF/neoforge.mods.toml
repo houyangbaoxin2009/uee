@@ -13,6 +13,11 @@ Exports mod metadata, registries, datapack contents and game assets in one confi
 as machine-readable artifacts for automation such as wiki editing workflows.
 '''
 
+# Installable on either side alone. The loader's default is to require the mod on both, which turns
+# "client only" and "server only" into a version mismatch at connect time. The value is the loader's own
+# constant rather than a guess.
+displayTest = "IGNORE_ALL_VERSION"
+
 [[dependencies.uee]]
 modId = "neoforge"
 type = "required"

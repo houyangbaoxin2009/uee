@@ -596,18 +596,13 @@ public final class UeeCommand {
         source.sendSuccess(() -> org.uee.mc.Ui.t("uee.export.dataLoc").copy()
                 .append(link(source, root)), false);
         if (config.analyze() && config.analysisSeparate()) {
-            Path analysis = sibling(root, "-analysis");
+            Path analysis = org.uee.pipeline.Exporter.analysisDir(root);
             source.sendSuccess(() -> org.uee.mc.Ui.t("uee.export.analysisLoc").copy()
                     .append(link(source, analysis)), false);
         }
     }
 
-    /** Where the analysis lands when it is kept apart, matching the pipeline's own rule. */
-    static Path sibling(Path root, String suffix) {
-        Path name = root.getFileName();
-        return name == null ? root : root.resolveSibling(name + suffix);
-    }
-
+    
     /**
      * The click action attached to a path, chosen by asking the API rather than by trust.
      *
@@ -691,7 +686,11 @@ public final class UeeCommand {
         if (source.getEntity() == null || action == null) {
             return base;
         }
-        return base.withStyle(style -> style
+        return base.withStyle(
+                // Marked so a reader can tell there is something to click: without it the path looks like
+                // every other path in the output and the interaction is only found by hovering everything.
+                net.minecraft.ChatFormatting.AQUA, net.minecraft.ChatFormatting.UNDERLINE)
+                .withStyle(style -> style
                 .withClickEvent(new ClickEvent(action, text))
                 // The hover says what the click does. It used to say "open / 打开" for a click that has
                 // never been able to open anything, since the action was refused everywhere it mattered.
@@ -778,9 +777,16 @@ public final class UeeCommand {
             source.sendSuccess(() -> org.uee.mc.Ui.t("uee.status.configLine", "").copy()
                     .append(link(source, file)), false);
         }
-        String language = Uee.messageLanguage();
-        detail(source, "uee.status.language", language.isEmpty()
-                ? org.uee.mc.Ui.lookup("uee.status.languageGame") : language);
+        // The name of the language rather than the fact that it was chosen by following something: which
+        // language the next line is in is the thing worth knowing, and it is knowable.
+        String configured = Uee.messageLanguage();
+        if (!configured.isEmpty()) {
+            detail(source, "uee.status.language", configured);
+        } else {
+            String client = org.uee.mc.Ui.clientLocale();
+            detail(source, "uee.status.language", client.isEmpty()
+                    ? org.uee.mc.Ui.format("uee.status.languageServer", "en_us") : client);
+        }
         return 1;
     }
 
@@ -1366,7 +1372,7 @@ public final class UeeCommand {
 
     private static int help(CommandSourceStack source, String name) {
         String p = "/" + name;
-        detail(source, "uee.help.title", Uee.NAME);
+        detail(source, "uee.help.title", org.uee.mc.Ui.appName());
         detail(source, "uee.help.export", p);
         detail(source, "uee.help.exportKinds", p);
         detail(source, "uee.help.formats", p);

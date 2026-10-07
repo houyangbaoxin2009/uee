@@ -137,8 +137,17 @@ public final class DefaultsAndKnobsTest {
         check("blocks were exported", kinds.contains("block"));
         check("the analysis ran", kinds.contains("conflict") || kinds.contains("dependency"));
 
-        Path analysis = root.resolveSibling(root.getFileName() + "-analysis");
+        // Asked rather than restated: the directory is the program's rule, and a second copy of it here
+        // would be a second thing to update -- which is exactly what happened when the analysis half moved
+        // to its own namespace.
+        Path analysis = org.uee.pipeline.Exporter.analysisDir(root);
         check("the analysis went to its own bundle", Files.isDirectory(analysis));
+
+        // Named as asked rather than merely asked of the program: the requirement is that the analysis
+        // half has a namespace of its own, and "somewhere else" would satisfy the check above without
+        // satisfying that.
+        check("and under a namespace of its own, named as such",
+                "ueea".equals(String.valueOf(analysis.getFileName())));
         check("the data bundle has category directories", Files.isDirectory(root.resolve("items"))
                 || Files.isDirectory(root.resolve("items").getParent()));
         check("nothing was written into the analysis bundle by mistake",

@@ -80,6 +80,38 @@ public final class UiText {
         return key;
     }
 
+    /**
+     * Arguments a translated component may carry.
+     *
+     * <h2>The defect this exists to prevent</h2>
+     *
+     * <p>The client refuses to encode a component whose translation arguments are anything but a number, a
+     * boolean or a string, and the refusal is not local: the whole <em>packet</em> fails, so the reader
+     * receives nothing at all while the log records an encode failure. A {@code Path} is none of those
+     * three, so every message carrying one was unsendable — and the one it was noticed on was the status
+     * readout, where the path is the most useful thing on the line.
+     *
+     * <p>Converting here rather than at the call site is deliberate. The rule belongs to the translation
+     * layer, which is the only part that knows what a component accepts, and a fix at each call site would
+     * be one more thing for the next call site to forget. It also lives in the core rather than beside the
+     * component code so that it can be checked without a game, which is how it is now covered.
+     *
+     * <p>Anything already acceptable is left alone, so nothing changes for the arguments that were always
+     * fine.
+     */
+    public static Object[] translatable(Object[] args) {
+        if (args == null || args.length == 0) {
+            return args;
+        }
+        Object[] out = new Object[args.length];
+        for (int i = 0; i < args.length; i++) {
+            Object arg = args[i];
+            out[i] = arg instanceof Number || arg instanceof Boolean || arg instanceof String
+                    ? arg : String.valueOf(arg);
+        }
+        return out;
+    }
+
     /** One message with its arguments substituted, in the same order as {@code String.format}. */
     public static String format(String locale, String key, Object... args) {
         String text = get(locale, key);

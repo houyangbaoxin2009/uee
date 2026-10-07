@@ -63,6 +63,7 @@ public final class UiTextTest {
         everyKeyTheCodeUsesIsDefined(source);
         nothingIsDefinedAndUnused(source);
         theFallbackChain();
+        argumentsAreAlwaysSendable();
         formatting();
 
         System.out.println();
@@ -138,8 +139,13 @@ public final class UiTextTest {
         section("nothing is defined and unused");
 
         Set<String> used = keysUsedInSource(source);
-        Set<String> defined = UiText.englishKeys();
-        List<String> orphans = defined.stream().filter(k -> !used.contains(k)).sorted().toList();
+        // Only this mod's own keys are required to be used. The catalogue also holds keys other software
+        // reads by its own convention -- the mod list reads a name translation under its own prefix -- and
+        // those are addressed to that software, not to a call site here.
+        List<String> orphans = UiText.englishKeys().stream()
+                .filter(k -> k.startsWith(UiText.PREFIX))
+                .filter(k -> !used.contains(k))
+                .sorted().toList();
         // Not a correctness problem, but the entry is a claim that something says this, and a stale one
         // hides the fact that the message it belonged to is gone.
         check("every English entry is used somewhere" + (orphans.isEmpty() ? "" : ": " + orphans),
@@ -201,6 +207,60 @@ public final class UiTextTest {
         check("and an empty request is English alone",
                 UiText.chain("").equals(List.of("en_us")) && UiText.chain(null).equals(List.of("en_us")));
     }
+
+    /**
+     * A translation argument may be anything, and the message still has to be sendable.
+     *
+     * <h2>Why this is here</h2>
+     *
+     * <p>The client refuses to encode a component whose translation arguments are not a number, a boolean
+     * or a string, and the refusal takes the whole packet with it: the reader gets nothing and the log gets
+     * an encode failure. A {@code Path} is not one of the three, so the status readout — which reports
+     * paths, and where the path is the most useful thing on the line — could not be sent at all.
+     *
+     * <p>So the arguments are checked directly rather than through a message, because the rule is about
+     * what the component will accept and not about any one sentence. The types here are the ones a caller
+     * is most likely to pass without thinking: the path it just computed, the collection it just built, the
+     * value it looked up.
+     */
+    private static void argumentsAreAlwaysSendable() {
+        section("arguments a message can carry");
+
+        Object[] mixed = {java.nio.file.Path.of("D:/x/config/uee.data.tie"), List.of("a", "b"),
+                Map.of("k", "v"), null, 7, true, "text", new StringBuilder("built")};
+        Object[] safe = UiText.translatable(mixed);
+        check("the conversion returns as many arguments as it was given",
+                safe.length == mixed.length);
+
+        boolean allAllowed = true;
+        for (Object arg : safe) {
+            // The exact predicate the client applies, as read from its own code rather than restated.
+            if (!(arg instanceof Number || arg instanceof Boolean || arg instanceof String)) {
+                allAllowed = false;
+            }
+        }
+        check("every argument is one the client will encode" + (allAllowed ? "" : ": " + java.util.Arrays.toString(safe)),
+                allAllowed);
+
+        // The conversions a reader would expect, not merely ones that pass the check.
+        check("a path becomes its text", safe[0] instanceof String && safe[0].toString().contains("uee.data.tie"));
+        check("a collection becomes its own text", safe[1] instanceof String);
+        check("a map too", safe[2] instanceof String);
+        check("null becomes the word", "null".equals(safe[3]));
+        check("a number is left as a number", safe[4] instanceof Number);
+        check("a boolean is left as a boolean", safe[5] instanceof Boolean);
+        check("and a string is left alone", "text".equals(safe[6]));
+        check("while anything else becomes its text", "built".equals(safe[7]));
+
+        // And the entry that broke is formatted with a path without complaint.
+        String withPath = UiText.format("en_us", "uee.status.output", java.nio.file.Path.of("D:/x/exports/uee"));
+        check("a message whose argument is a path formats", withPath.contains("uee"));
+        check("with the path's own text in it", withPath.contains("exports"));
+
+        check("no arguments is left alone", UiText.translatable(null) == null);
+        check("and an empty array too", UiText.translatable(new Object[0]).length == 0);
+    }
+
 
     private static void formatting() {
         section("arguments");

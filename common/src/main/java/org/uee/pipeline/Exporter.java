@@ -73,6 +73,15 @@ public final class Exporter implements ElementSink {
     /** Directory that holds datapack-target output, one sub-directory per target. */
     public static final String TARGETS_DIR = "targets";
 
+    /**
+     * The namespace the analysis half lives under when it is kept apart.
+     *
+     * <p>A name of its own rather than a suffix on the data half's: the two are different artifacts with
+     * different readers, and calling one {@code ueea} says that in a word instead of describing it in terms
+     * of the other.
+     */
+    public static final String ANALYSIS_NAMESPACE = "ueea";
+
     private final LoaderAdapter adapter;
     private final ExportConfig config;
     private final Path root;
@@ -538,9 +547,7 @@ public final class Exporter implements ElementSink {
         //      consumer (a wiki importer) without the diagnostics riding along;
         //   2. each category may get its own directory;
         //   3. shards may be grouped by namespace within that.
-        Path base = kind.isAnalysis() && config.analysisSeparate()
-                ? root.resolveSibling(root.getFileName() + "-analysis")
-                : root;
+        Path base = kind.isAnalysis() && config.analysisSeparate() ? analysisDir(root) : root;
         if (!target.isEmpty()) {
             base = base.resolve(TARGETS_DIR).resolve(sanitise(target));
         }
@@ -556,6 +563,19 @@ public final class Exporter implements ElementSink {
                 config.delta() && !config.dryRun());
         shards.put(key, created);
         return created;
+    }
+
+    /**
+     * Where the analysis half goes, given the data half's directory.
+     *
+     * <p>One rule, asked by both the pipeline that writes there and the command that reports the path. Two
+     * copies of a path rule is the shape of defect where a report sends someone to a directory nothing was
+     * written into.
+     */
+    public static Path analysisDir(Path dataRoot) {
+        Path name = dataRoot.getFileName();
+        return name == null ? dataRoot.resolve(ANALYSIS_NAMESPACE)
+                : dataRoot.resolveSibling(ANALYSIS_NAMESPACE);
     }
 
     /** Turns a target key into one safe path segment. */

@@ -40,6 +40,7 @@ public final class Ui {
      */
     public static Component t(String key, Object... args) {
         String locale = Uee.messageLanguage();
+        args = UiText.translatable(args);
         if (locale == null || locale.isBlank()) {
             // The client resolves it. Passing the key means a client that has no translation shows the key,
             // so the English entry is asserted to exist rather than hoped for -- see the completeness check.
@@ -79,7 +80,36 @@ public final class Ui {
      */
     public static String format(String key, Object... args) {
         String locale = Uee.messageLanguage();
+        args = UiText.translatable(args);
         return UiText.format(locale == null || locale.isBlank() ? null : locale, key, args);
+    }
+
+    
+    /**
+     * The language a client is using, or empty when there is no client to ask.
+     *
+     * <p>Asked because "follows the game" is not an answer a reader can act on: someone checking which
+     * language the next line will be in wants the name, and the name is knowable. On a dedicated server
+     * there is no client, and that is reported as such rather than guessed at.
+     *
+     * <p>The client class is named only inside this method and only once the side is known to have a
+     * client, so a dedicated server never resolves it -- which matters, because there it does not exist.
+     */
+    public static String clientLocale() {
+        try {
+            var adapter = Uee.adapter();
+            if (adapter == null || adapter.info() == null || !adapter.info().client()) {
+                return "";
+            }
+            var client = net.minecraft.client.Minecraft.getInstance();
+            if (client == null || client.getLanguageManager() == null) {
+                return "";
+            }
+            String selected = client.getLanguageManager().getSelected();
+            return selected == null ? "" : selected;
+        } catch (Throwable t) {
+            return "";
+        }
     }
 
     /** What a setting did, in the reader's language. */
