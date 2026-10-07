@@ -833,6 +833,12 @@ public final class UeeCommand {
             ExportConfig c = r.config();
             detail(source, "uee.status.export", String.join(", ", c.formats()));
             detail(source, "uee.status.analyzer", analysisState(c));
+            // The effective count, and the configured one beside it when they differ, because a setting
+            // that silently does nothing is worse than one that is absent.
+            int effective = org.uee.pipeline.Exporter.effectiveThreads();
+            detail(source, "uee.status.threads", c.threads() == effective
+                    ? String.valueOf(effective)
+                    : org.uee.mc.Ui.format("uee.status.threadsNote", effective, c.threads()));
             detail(source, "uee.status.categories", c.kinds().size());
             // The output directory is the one path whose useful action is to open it, so it is the one that
             // gets the directory treatment rather than the copy treatment.
@@ -843,6 +849,13 @@ public final class UeeCommand {
                 source.sendSuccess(() -> org.uee.mc.Ui.t("uee.status.configLine", "").copy()
                         .append(link(source, file)), false);
             }
+            // What will be remembered. Named rather than counted, since which settings survive is the
+            // question a reader has, and "3" does not answer it.
+            java.util.List<String> kept = new java.util.ArrayList<>(c.persist());
+            java.util.Collections.sort(kept);
+            detail(source, "uee.status.persist", kept.isEmpty()
+                    ? org.uee.mc.Ui.lookup("uee.status.persistNone")
+                    : String.join(", ", kept));
             for (String warning : r.warnings()) {
                 detail(source, "uee.status.warning", warning);
             }

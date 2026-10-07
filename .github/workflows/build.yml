@@ -135,5 +135,8 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # Run through the wrapper so the number of tests that ran is compared with the number the suite
+      # defines. "All N required tests passed" is true for any N, and N has been seen smaller than the
+      # suite while the run described itself as successful.
       - name: Run NeoForge game tests
-        run: ./gradlew :neoforge:runGameTestServer
+        run: ./scripts/check-game-test-count.sh

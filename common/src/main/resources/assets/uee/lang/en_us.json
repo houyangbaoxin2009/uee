@@ -197,5 +197,9 @@
   "uee.status.mods": "mods:        %s",
   "uee.status.export": "export:      %s",
   "uee.status.analyzer": "analyzer:    %s",
-  "uee.status.sectionFrame": "%s%s%s"
+  "uee.status.sectionFrame": "%s%s%s",
+  "uee.status.threads": "threads:     %s",
+  "uee.status.persist": "persist:     %s",
+  "uee.status.persistNone": "none",
+  "uee.status.threadsNote": "%s (configured %s, not in effect)"
 }

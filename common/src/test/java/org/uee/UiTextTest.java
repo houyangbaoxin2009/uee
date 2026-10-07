@@ -177,8 +177,9 @@ public final class UiTextTest {
         // Grouped by the listing they appear in, since two listings need not share a width.
         java.util.List<java.util.List<String>> groups = java.util.List.of(
                 java.util.List.of("uee.status.loader", "uee.status.game", "uee.status.mods",
-                        "uee.status.export", "uee.status.analyzer", "uee.status.categories",
-                        "uee.status.output", "uee.status.configLine", "uee.status.language"),
+                        "uee.status.export", "uee.status.analyzer", "uee.status.threads",
+                        "uee.status.categories", "uee.status.output", "uee.status.configLine",
+                        "uee.status.persist", "uee.status.language"),
                 java.util.List.of("uee.export.dataLoc", "uee.export.analysisLoc"));
 
         for (String locale : UiText.availableLocales()) {

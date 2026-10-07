@@ -197,5 +197,9 @@
   "uee.status.mods": "模组数量：%s 个模组",
   "uee.status.export": "导出信息：%s",
   "uee.status.analyzer": "分析器　：%s",
-  "uee.status.sectionFrame": "%s%s%s"
+  "uee.status.sectionFrame": "%s%s%s",
+  "uee.status.threads": "执行线程：%s",
+  "uee.status.persist": "持久化　：%s",
+  "uee.status.persistNone": "无",
+  "uee.status.threadsNote": "%s（配置为 %s，尚未生效）"
 }

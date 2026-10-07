@@ -566,6 +566,24 @@ public final class Exporter implements ElementSink {
     }
 
     /**
+     * How many threads the collection half actually runs on.
+     *
+     * <h2>Why this is asked rather than read from the configuration</h2>
+     *
+     * <p>There is a {@code threads} setting, and it is parsed, documented and written back out — but the
+     * collection path does not run through the ordered-work pool that would use it, so the setting has no
+     * effect. Reporting the configured number would claim parallelism that does not happen; reporting
+     * nothing would leave a reader wondering whether their setting was applied.
+     *
+     * <p>The answer lives here rather than in the readout so that there is one place to change when the
+     * collection path does become parallel: whoever wires it up changes this, and the status line follows
+     * without anyone having to remember it exists.
+     */
+    public static int effectiveThreads() {
+        return 1;
+    }
+
+    /**
      * Where the analysis half goes, given the data half's directory.
      *
      * <p>One rule, asked by both the pipeline that writes there and the command that reports the path. Two
