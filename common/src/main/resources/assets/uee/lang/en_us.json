@@ -64,8 +64,6 @@
   "uee.status.findings": "%s finding(s), %s error(s)",
   "uee.status.more": "  ... and %s more; /uee export analysis writes them all out",
   "uee.status.headline": "%s - %s",
-  "uee.status.analysisInOwnPackage": "separate (UEEA)",
-  "uee.status.analysisBundled": "bundled",
   "uee.status.analysisOff": "off",
   "uee.status.warning": "  warning: %s",
   "uee.status.configUnreadable": "  config file unreadable: %s",
@@ -149,7 +147,6 @@
   "uee.strategy.entry": "  %s  (%s rules%s)",
   "uee.strategy.note": "      %s",
   "uee.finding.entry": "  [%s] %s",
-  "uee.help.export": "  %s                      export with the default settings",
   "uee.help.exportKinds": "  %s export [kinds]       choose which categories to export",
   "uee.help.formats": "  %s formats <formats>    choose the output format(s)",
   "uee.help.halves": "  %s data | analysis       only one half of a run",
@@ -201,5 +198,15 @@
   "uee.status.threads": "threads:     %s",
   "uee.status.persist": "persist:     %s",
   "uee.status.persistNone": "none",
-  "uee.status.threadsNote": "%s (configured %s, not in effect)"
+  "uee.status.threadsNote": "%s (configured %s, not in effect)",
+  "uee.app.shortAnalysis": "UEEA",
+  "uee.status.section.analysis": "Analysis",
+  "uee.analysis.mode": "bundling:    %s",
+  "uee.analysis.output": "output:      %s",
+  "uee.analysis.targets": "targets:     %s",
+  "uee.analysis.strategies": "strategies:  %s",
+  "uee.help.bare": "  %s                      export with the default settings",
+  "uee.help.bareAnalysis": "  %s                      export the analysis half alone",
+  "uee.status.analysisInOwnPackage": "separate (UEEA)",
+  "uee.status.analysisBundled": "bundled"
 }

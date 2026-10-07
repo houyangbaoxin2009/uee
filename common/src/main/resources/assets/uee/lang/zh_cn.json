@@ -64,8 +64,6 @@
   "uee.status.findings": "%s 条发现，%s 个错误",
   "uee.status.more": "  ……还有 %s 条；/uee export analysis 会全部写出",
   "uee.status.headline": "%s - %s",
-  "uee.status.analysisInOwnPackage": "单独一个包（UEEA）",
-  "uee.status.analysisBundled": "与导出合在一起",
   "uee.status.analysisOff": "关",
   "uee.status.warning": "  警告：%s",
   "uee.status.configUnreadable": "  配置文件无法读取：%s",
@@ -149,7 +147,6 @@
   "uee.strategy.entry": "  %s  （%s 条规则%s）",
   "uee.strategy.note": "      %s",
   "uee.finding.entry": "  [%s] %s",
-  "uee.help.export": "  %s                      按默认设置导出",
   "uee.help.exportKinds": "  %s export [类目]       选择要导出的类目",
   "uee.help.formats": "  %s formats <格式>      选择输出格式",
   "uee.help.halves": "  %s data | analysis      只做一次运行的一半",
@@ -201,5 +198,15 @@
   "uee.status.threads": "执行线程：%s",
   "uee.status.persist": "持久化　：%s",
   "uee.status.persistNone": "无",
-  "uee.status.threadsNote": "%s（配置为 %s，尚未生效）"
+  "uee.status.threadsNote": "%s（配置为 %s，尚未生效）",
+  "uee.app.shortAnalysis": "UEEA",
+  "uee.status.section.analysis": "分析",
+  "uee.analysis.mode": "分析输出：%s",
+  "uee.analysis.output": "输出位置：%s",
+  "uee.analysis.targets": "采集对象：%s",
+  "uee.analysis.strategies": "分析策略：%s",
+  "uee.help.bare": "  %s                      按默认设置导出",
+  "uee.help.bareAnalysis": "  %s                      只导出分析部分",
+  "uee.status.analysisInOwnPackage": "单独一个包（UEEA）",
+  "uee.status.analysisBundled": "与数据合并"
 }

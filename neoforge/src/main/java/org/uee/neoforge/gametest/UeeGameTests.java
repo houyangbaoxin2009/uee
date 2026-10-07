@@ -841,6 +841,39 @@ public final class UeeGameTests {
         helper.succeed();
     }
 
+    /**
+     * Both commands are registered, and the analysis one is its own command rather than a modifier.
+     *
+     * <h2>What this is here for</h2>
+     *
+     * <p>The analysis half got a namespace of its own and no command, because the registration method that
+     * would have added the second name existed and nothing called it. A command tree is not reachable from
+     * a unit test, so this asks the dispatcher that the game actually uses, which is the only place the
+     * answer exists.
+     */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void bothCommandsAreRegistered(GameTestHelper helper) {
+        var dispatcher = helper.getLevel().getServer().getCommands().getDispatcher();
+        var names = dispatcher.getRoot().getChildren().stream().map(node -> node.getName())
+                .collect(java.util.stream.Collectors.toSet());
+
+        helper.assertTrue(names.contains("uee"), "the command is not registered");
+        helper.assertTrue(names.contains("ueea"),
+                "the analysis command is not registered, so the analysis half has no command of its own");
+
+        // Registered is not the same as usable: the analysis command has to accept its own status verb,
+        // which is the one verb whose answer differs between the two commands.
+        var ueea = dispatcher.getRoot().getChild("ueea");
+        helper.assertTrue(ueea.getChild("status") != null,
+                "the analysis command has no status verb");
+        helper.assertTrue(ueea.getChild("analyze") != null,
+                "the analysis command has no analyze verb");
+        helper.assertFalse(names.contains("uee_analysis"),
+                "the analysis command should be named for its namespace, not derived from the other one");
+
+        helper.succeed();
+    }
+
     /** The mod list contains this mod and the game itself, with dependencies parsed. */
     @GameTest(template = "empty", timeoutTicks = 200)
     public static void modListIsAvailable(GameTestHelper helper) {

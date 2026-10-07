@@ -53,7 +53,7 @@ public final class UiTextTest {
 
     private static final Pattern KEY = Pattern.compile(
             "\"(uee\\.(?:set|err|cmd|status|export|job|jobs|kinds|formats|config|declare|asset"
-                    + "|help|flow|datapack|globalpack|target|strategy|finding|hover|app)\\.[A-Za-z0-9_.]+)\"");
+                    + "|help|flow|datapack|globalpack|target|strategy|finding|hover|app|analysis)\\.[A-Za-z0-9_.]+)\"");
 
     public static void main(String[] args) throws IOException {
         Path root = Path.of(args.length > 0 ? args[0] : "build/ui-text-test");

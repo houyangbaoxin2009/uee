@@ -119,31 +119,53 @@ public final class UeeCommand {
     private UeeCommand() {
     }
 
+    /**
+     * The command's name, and the name of the analysis half's own command.
+     *
+     * <p>Two commands rather than one with a modifier, because the two halves are different artifacts with
+     * different readers: the data half exists so a wiki importer can read it, and the analysis half exists
+     * so a person can see what is wrong. Someone reaching for the second should not have to know that the
+     * first is the default and name the other as an exception to it.
+     */
+    public static final String NAME = "uee";
+
+    /** The analysis half's command, which is where its own directory is named after. */
+    public static final String ANALYSIS_NAME = "ueea";
+
+    /**
+     * Registers both commands.
+     *
+     * <p>One entry point, and it registers both, so no loader can end up with one of them — which is the
+     * shape of defect this replaces: an alias-taking variant existed and nothing called it, so the analysis
+     * half had a namespace and no command.
+     */
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
-        dispatcher.register(build("uee"));
+        dispatcher.register(build(NAME, false));
+        dispatcher.register(build(ANALYSIS_NAME, true));
     }
 
-    /** Registers a short alias alongside the full command. */
-    public static void registerWithAlias(CommandDispatcher<CommandSourceStack> dispatcher,
-            String alias) {
-        dispatcher.register(build("uee"));
-        dispatcher.register(build(alias));
-    }
-
-    private static LiteralArgumentBuilder<CommandSourceStack> build(String name) {
+    /**
+     * The command tree, told which half it is the command for.
+     *
+     * @param analysisOnly which half a bare invocation runs, and which status view it shows
+     */
+    private static LiteralArgumentBuilder<CommandSourceStack> build(String name, boolean analysisOnly) {
         return Commands.literal(name)
                 .requires(source -> source.hasPermission(PERMISSION))
-                // Bare /uee: the one-key default, placed first so it reads as the primary action.
-                // Starts a job rather than blocking the tick; see the class doc.
-                .executes(ctx -> runAsync(ctx.getSource(), ConfigFile.empty()))
-                .then(Commands.literal("help").executes(ctx -> help(ctx.getSource(), name)))
-                .then(Commands.literal("status").executes(ctx -> status(ctx.getSource())))
+                // The bare invocation is each command's primary action, placed first so it reads as such.
+                // A job rather than a blocking run; see the class doc.
+                .executes(ctx -> runAsync(ctx.getSource(), analysisOnly
+                        ? kindsOnly(Tokens.ANALYSIS) : ConfigFile.empty()))
+                .then(Commands.literal("help").executes(ctx -> help(ctx.getSource(), name, analysisOnly)))
+                .then(Commands.literal("status").executes(ctx -> analysisOnly
+                        ? analysisStatus(ctx.getSource()) : status(ctx.getSource())))
                 .then(Commands.literal("kinds").executes(ctx -> listKinds(ctx.getSource())))
                 .then(Commands.literal("listformats").executes(ctx -> listFormats(ctx.getSource())))
 
                 .then(Commands.literal("export")
                         // The short form is the safe form: start a job and return. See the class doc.
-                        .executes(ctx -> runAsync(ctx.getSource(), ConfigFile.empty()))
+                        .executes(ctx -> runAsync(ctx.getSource(), analysisOnly
+                                ? kindsOnly(Tokens.ANALYSIS) : ConfigFile.empty()))
                         // Explicitly on this thread, for when the caller knows the run is small.
                         .then(Commands.literal("sync")
                                 .executes(ctx -> runWith(ctx.getSource(), ConfigFile.empty()))
@@ -708,6 +730,52 @@ public final class UeeCommand {
         int left = remaining / 2;
         int right = remaining - left;
         detail(source, "uee.status.sectionFrame", "=".repeat(left), name, "=".repeat(right));
+    }
+
+    /**
+     * The analysis half's own status: where it lands and what will feed it.
+     *
+     * <p>A view of its own rather than a subset of the full one. Someone asking this command wants to know
+     * whether the analysis goes somewhere of its own and what datapacks have declared for it, and neither
+     * is visible in a report of the data half's defaults.
+     */
+    private static int analysisStatus(CommandSourceStack source) {
+        var adapter = Uee.adapter();
+        if (adapter == null) {
+            refuse(source, "uee.cmd.noAdapter");
+            return 0;
+        }
+        String version = Uee.modVersion();
+        detail(source, "uee.status.headline", org.uee.mc.Ui.lookup("uee.app.shortAnalysis"),
+                version.isEmpty() ? "" : version);
+
+        try {
+            ConfigResolver.Resolved r = Uee.resolveForRun(ConfigFile.empty());
+            ExportConfig c = r.config();
+            boolean separate = c.analyze() && c.analysisSeparate();
+
+            section(source, "uee.status.section.analysis");
+            detail(source, "uee.analysis.mode", org.uee.mc.Ui.lookup(separate
+                    ? "uee.status.analysisInOwnPackage" : "uee.status.analysisBundled"));
+            // The directory the analysis actually lands in, which is its own only when it is kept apart.
+            Path where = separate
+                    ? org.uee.pipeline.Exporter.analysisDir(c.outputDir()) : c.outputDir();
+            source.sendSuccess(() -> org.uee.mc.Ui.t("uee.analysis.output", "").copy()
+                    .append(folderLink(source, where)), false);
+            detail(source, "uee.analysis.targets", Uee.catalog().targets().size());
+            detail(source, "uee.analysis.strategies", Uee.catalog().strategies().size());
+
+            section(source, "uee.status.section.messages");
+            String configured = Uee.messageLanguage();
+            String client = org.uee.mc.Ui.clientLocale();
+            detail(source, "uee.status.language", !configured.isEmpty() ? configured
+                    : (client.isEmpty()
+                            ? org.uee.mc.Ui.format("uee.status.languageServer", "en_us") : client));
+        } catch (IOException e) {
+            detail(source, "uee.status.configUnreadable", e);
+            return 0;
+        }
+        return 1;
     }
 
     /**
@@ -1457,12 +1525,15 @@ public final class UeeCommand {
 
     // ---------------------------------------------------------------- help
 
-    private static int help(CommandSourceStack source, String name) {
+    private static int help(CommandSourceStack source, String name, boolean analysisOnly) {
         String p = "/" + name;
         // The name alone. It used to be followed by a description of what the program is, which said the
         // same thing twice: "Universal Element Exporter -- multi-loader element exporter".
         source.sendSuccess(() -> org.uee.mc.Ui.t("uee.app.name"), false);
-        detail(source, "uee.help.export", p);
+        // The first line says what a bare invocation does, which is the one thing that differs between the
+        // two commands, so a reader can see which half they are looking at.
+        source.sendSuccess(() -> org.uee.mc.Ui.t(analysisOnly
+                ? "uee.help.bareAnalysis" : "uee.help.bare", p), false);
         detail(source, "uee.help.exportKinds", p);
         detail(source, "uee.help.formats", p);
         detail(source, "uee.help.halves", p);
