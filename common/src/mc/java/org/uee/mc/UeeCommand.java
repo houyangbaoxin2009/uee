@@ -227,6 +227,32 @@ public final class UeeCommand {
                         .then(Commands.literal("no-icons")
                                 .executes(ctx -> applySetting(ctx.getSource(),
                                         () -> SURFACE.setFlag("icons", false))))
+                        .then(Commands.literal("assets")
+                                .executes(ctx -> applySetting(ctx.getSource(),
+                                        () -> SURFACE.setFlag("assets", true))))
+                        .then(Commands.literal("no-assets")
+                                .executes(ctx -> applySetting(ctx.getSource(),
+                                        () -> SURFACE.setFlag("assets", false))))
+                        .then(Commands.literal("delta")
+                                .executes(ctx -> applySetting(ctx.getSource(),
+                                        () -> SURFACE.setFlag("delta", true))))
+                        .then(Commands.literal("no-delta")
+                                .executes(ctx -> applySetting(ctx.getSource(),
+                                        () -> SURFACE.setFlag("delta", false))))
+                        .then(Commands.literal("auto-run")
+                                .executes(ctx -> applySetting(ctx.getSource(),
+                                        () -> SURFACE.setFlag("auto_run", true))))
+                        .then(Commands.literal("no-auto-run")
+                                .executes(ctx -> applySetting(ctx.getSource(),
+                                        () -> SURFACE.setFlag("auto_run", false))))
+                        .then(Commands.literal("persist")
+                                .then(Commands.argument("keys", StringArgumentType.greedyString())
+                                        .executes(ctx -> applySetting(ctx.getSource(),
+                                                () -> SURFACE.setPersist(arg(ctx, "keys"))))))
+                        .then(Commands.literal("user-dir")
+                                .then(Commands.argument("dir", StringArgumentType.greedyString())
+                                        .executes(ctx -> applySetting(ctx.getSource(),
+                                                () -> SURFACE.setUserDir(arg(ctx, "dir"))))))
                         // The list of what can be set, so the long form is discoverable without the
                         // documentation.
                         .executes(ctx -> listSettables(ctx.getSource())))

@@ -260,9 +260,68 @@ public final class CommandSurface {
                 b.icons(value);
                 description = "icons: " + value;
             }
+            case "assets" -> {
+                b.assets(value);
+                description = value
+                        ? "assets: textures, models, sounds and language files will be copied"
+                        : "assets: not copying them";
+            }
+            case "delta" -> {
+                b.delta(value);
+                description = value
+                        ? "delta: only what changed since the last run will be written"
+                        : "delta: writing everything";
+            }
+            case "auto_run" -> {
+                b.autoRun(value);
+                description = value
+                        ? "auto-run: an export will run when a game starts"
+                        : "auto-run: off";
+            }
             default -> throw new IllegalArgumentException(key + " is not settable");
         }
         return remember(new Setting(b.build(), description, 1));
+    }
+
+    /**
+     * Sets the whitelist of settings that are kept between runs.
+     *
+     * <p>An empty argument clears it rather than being an error, because "keep nothing" is a legitimate
+     * thing to want and the alternative — a separate verb for it — would be a second way to say one thing.
+     * Names that cannot be kept are dropped by the writer and reported there, not here: this verb's job is
+     * to record what was asked for, and the place that knows which names are usable is the place that writes
+     * them.
+     */
+    public Setting setPersist(String arg) {
+        java.util.Set<String> keys = new java.util.LinkedHashSet<>();
+        if (arg != null) {
+            for (String token : arg.split("[,\\s]+")) {
+                if (!token.isBlank()) {
+                    keys.add(token.trim());
+                }
+            }
+        }
+        return remember(new Setting(ConfigFile.builder().persist(keys).build(),
+                keys.isEmpty() ? "nothing will be kept between runs"
+                        : "keeping " + String.join(", ", keys) + " between runs",
+                keys.size()));
+    }
+
+    /**
+     * Sets where the portable state lives.
+     *
+     * <p>An empty argument means the default rather than the current directory, since a user clearing a
+     * path is asking for the normal place and not for whatever directory the game happens to be in.
+     */
+    public Setting setUserDir(String arg) {
+        String trimmed = arg == null ? "" : arg.trim();
+        ConfigFile.Builder b = ConfigFile.builder();
+        if (trimmed.isEmpty()) {
+            b.userDir(null);
+            return remember(new Setting(b.build(), "state directory: back to the default", 1));
+        }
+        b.userDir(java.nio.file.Path.of(trimmed));
+        return remember(new Setting(b.build(), "state directory: " + trimmed, 1));
     }
 
     // ---------------------------------------------------------------- the session

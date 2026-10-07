@@ -36,6 +36,7 @@ public final class CommandSurfaceTest {
         staticInputs();
         settingVerbs();
         rejectionMessages();
+        everyPersistableKeyIsSettable();
         sessionStack();
         sessionPrecedence();
 
@@ -206,6 +207,59 @@ public final class CommandSurfaceTest {
     }
 
     // ---------------------------------------------------------------- refusals
+
+    /**
+     * Every key that can be kept must also be settable from the surface.
+     *
+     * <p>The property this catches is the one that made this check necessary: {@code assets}, {@code delta},
+     * {@code auto_run}, {@code persist} and {@code user_dir} each had a field, a parser branch and a place in
+     * the generated configuration, and no verb to set them — so the documentation described options a user
+     * could not actually turn on, and the only way to use them was to edit a file by hand. That is
+     * indistinguishable from the option not existing, until someone tries.
+     *
+     * <p>It is the same shape as the check that every nameable key can be written, one layer up: there the
+     * question was whether the writer knew the key, here it is whether the user can reach it.
+     */
+    private static void everyPersistableKeyIsSettable() {
+        section("every key can be reached");
+
+        CommandSurface surface = new CommandSurface();
+
+        // The boolean keys, each of which has a flag verb. The list is written out rather than derived,
+        // because deriving it would be another table to keep in step; what is checked is that each one works.
+        for (String key : new String[] {"quiet", "dry_run", "icons", "assets", "delta", "auto_run"}) {
+            boolean[] accepted = {true};
+            try {
+                surface.setFlag(key, true);
+                surface.setFlag(key, false);
+            } catch (IllegalArgumentException e) {
+                accepted[0] = false;
+            }
+            check("the '" + key + "' flag can be set both ways", accepted[0]);
+        }
+
+        // And the ones that take a value.
+        boolean persist = true;
+        try {
+            surface.setPersist("formats, output");
+            surface.setPersist("");
+        } catch (RuntimeException e) {
+            persist = false;
+        }
+        check("the persistence list can be set, and cleared", persist);
+
+        boolean userDir = true;
+        try {
+            surface.setUserDir("/somewhere");
+            surface.setUserDir("");
+        } catch (RuntimeException e) {
+            userDir = false;
+        }
+        check("the state directory can be set, and reset to the default", userDir);
+
+        // A key nothing recognises is still refused, so the surface did not become a catch-all.
+        expectRefusal("an unknown flag is still refused", () -> surface.setFlag("nonsense", true));
+    }
 
     private static void rejectionMessages() {
         section("refusals");
