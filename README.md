@@ -235,6 +235,21 @@ otherwise "no translations" and "the pack has none" are indistinguishable.
 
 ★ **每个声明的类目都必有采集器**，由 `categoryTest` 守着——曾经有 9 个类目可选却什么都产不出。
 
+★★ **声明表**：用户逐个整合包积累的**知识**（如「这个包把资产放在哪些目录」）存在持久化区的
+`table:<名>` 成员里，与设置同文件同容器。★ 第一个用例 = **资产种类**：
+`/uee declare asset-kind <名>` 追加、`no-asset-kind` 移除、`list` 查看。
+★★ **为什么必须由人声明**：`AssetSweep` 只扫内建 9 个目录，而**资源 API 无法报告包内有什么**
+（空前缀是非法路径且拒绝被吞掉；也没有接口能枚举命名空间）⇒ **唯一知道的是正在看这个包的人**。
+★ 扫描种类 = **内建 ∪ 声明**（内建在前，声明排序追加，去重）。★ **加种类很便宜、漏种类会静默丢文件**
+⇒ 这个不对称正是"可以随意加"的理由。★ 非法名**在声明时就拒绝**（不能变成路径的名会「扫了、没找到」，
+与空目录无法区分）。
+
+★★ **Declaration tables** hold what the user establishes about packs, one `table:<name>` member each, in
+the same file and container as the settings. The first use is **asset kinds**: `/uee declare asset-kind`
+adds one. **Why a person has to say it**: the resource API cannot report what a pack contains, so the only
+one who knows is whoever is looking at it. Kinds are the built-ins plus the declared ones, deduped.
+**Adding a kind is cheap and missing one loses files silently**, which is why the list may be extended freely.
+
 ★ **差量导出（默认关）**：`delta = true` 时按**分片**内容指纹（SHA-256）只写变化了的分片，未变的不重写、
 消失的删除；快照在输出目录的 `.uee-snapshot`。★ 为什么用 SHA-256 而不是校验和：差量把「指纹相同」
 当作「没变」，一次碰撞就是**一次丢失的变更**，且**静默**。★ 为什么按分片而非按记录：写端是流式缓冲、
