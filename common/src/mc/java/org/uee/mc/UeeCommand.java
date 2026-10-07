@@ -648,7 +648,8 @@ public final class UeeCommand {
      * a translator never sees the program's name as something to translate.
      */
     static Component line(String key, Object... args) {
-        return Component.literal(Uee.NAME + ": ").append(org.uee.mc.Ui.t(key, args));
+        return Component.literal(org.uee.mc.Ui.appName() + ": ")
+                .append(org.uee.mc.Ui.t(key, args));
     }
 
     /** Tells whoever asked. */
@@ -748,27 +749,38 @@ public final class UeeCommand {
             return 0;
         }
         var info = adapter.info();
-        // No prefix: the headline already names the program, and adding the usual one would say it twice.
-        detail(source, "uee.status.headline", Uee.NAME, info.loader(), info.minecraftVersion(),
-                adapter.mods().size());
 
-        // Show what a one-key run would do, so the effective state is visible before anything runs.
+        // Laid out on a grid rather than assembled line by line: two spaces, a label, then the value, and
+        // each language aligns its own labels inside its own entry. The headline is the exception, being
+        // the name and version rather than a labelled fact.
+        String version = Uee.modVersion();
+        detail(source, "uee.status.headline", org.uee.mc.Ui.appName(),
+                version.isEmpty() ? "" : version);
+        detail(source, "uee.status.environment", info.loader(), info.loaderVersion(),
+                info.minecraftVersion(), adapter.mods().size());
+
+        // What a one-key run would do, so the effective state is visible before anything runs.
         try {
             ConfigResolver.Resolved r = Uee.resolveForRun(ConfigFile.empty());
             ExportConfig c = r.config();
-            detail(source, "uee.status.defaultExport", String.join(", ", c.formats()),
+            detail(source, "uee.status.export", String.join(", ", c.formats()),
                     c.kinds().size(), analysisState(c));
+            detail(source, "uee.status.output", c.outputDir());
             for (String warning : r.warnings()) {
                 detail(source, "uee.status.warning", warning);
             }
         } catch (IOException e) {
             detail(source, "uee.status.configUnreadable", e);
         }
+
         Path file = Uee.configFile();
         if (file != null) {
-            source.sendSuccess(() -> org.uee.mc.Ui.t("uee.status.config").copy()
+            source.sendSuccess(() -> org.uee.mc.Ui.t("uee.status.configLine", "").copy()
                     .append(link(source, file)), false);
         }
+        String language = Uee.messageLanguage();
+        detail(source, "uee.status.language", language.isEmpty()
+                ? org.uee.mc.Ui.lookup("uee.status.languageGame") : language);
         return 1;
     }
 
@@ -1262,33 +1274,64 @@ public final class UeeCommand {
     private static int configSave(CommandSourceStack source) {
         try {
             ExportConfig config = Uee.resolveForRun(ConfigFile.empty()).config();
-            Path file = Uee.writeConfig(config);
-            source.sendSuccess(() -> line("uee.config.wroteEffective", "").copy()
-                    .append(link(source, file)), false);
-            return 1;
+            return writeConfigFile(source, Uee.configFile(),
+                    () -> ConfigFile.renderAnnotated(config), "uee.config.wroteEffective");
         } catch (IOException | IllegalStateException e) {
-            source.sendFailure(line("uee.cmd.failed", e));
+            refuse(source, "uee.config.couldNotWrite", Uee.configFile(), e);
+            return 0;
+        }
+    }
+
+    /**
+     * Writes a configuration file and reports what was actually observed.
+     *
+     * <h2>Why the report does not rest on the absence of an exception</h2>
+     *
+     * <p>These commands used to say "wrote ... to <path>" whenever the write did not throw, which is a
+     * weaker claim than it reads as: it says a write was attempted, not that a file exists. A user told a
+     * path and finding nothing there has been given a false statement, and what they were about to do —
+     * edit that file — is not possible.
+     *
+     * <p>So the file is checked after writing and the message carries the size that was seen. The check
+     * costs nothing next to the write, and the claim is then about the world rather than about this
+     * method's control flow.
+     */
+    private static int writeConfigFile(CommandSourceStack source, Path file,
+            java.util.function.Supplier<String> content, String successKey) {
+        if (file == null) {
+            refuse(source, "uee.cmd.noAdapter");
+            return 0;
+        }
+        try {
+            Path parent = file.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.writeString(file, content.get());
+
+            // Observed, not assumed. An empty file does not count either: the point of generating one is
+            // that there is something to read and edit.
+            if (!Files.isRegularFile(file) || Files.size(file) == 0) {
+                refuse(source, "uee.config.writeNotVisible", file.toAbsolutePath());
+                return 0;
+            }
+            String path = file.toAbsolutePath().toString();
+            String size = Long.toString(Files.size(file));
+            report(source, org.uee.mc.Ui.format(successKey, path, size));
+            return 1;
+        } catch (IOException e) {
+            refuse(source, "uee.config.couldNotWrite", file.toAbsolutePath(), e);
             return 0;
         }
     }
 
     private static int configTemplate(CommandSourceStack source) {
-        Path file = Uee.configFile();
-        if (file == null) {
-            source.sendFailure(Component.literal(Uee.NAME + ": no adapter bound"));
-            return 0;
-        }
-        try {
-            Files.createDirectories(file.getParent());
-            Files.writeString(file, ConfigFile.template());
-            source.sendSuccess(() -> line("uee.config.wroteTemplate", "").copy()
-                    .append(link(source, file)), false);
+        int written = writeConfigFile(source, Uee.configFile(), ConfigFile::template,
+                "uee.config.wroteTemplate");
+        if (written != 0) {
             detail(source, "uee.config.templateNote");
-            return 1;
-        } catch (IOException e) {
-            source.sendFailure(Component.literal(Uee.NAME + ": " + e));
-            return 0;
         }
+        return written;
     }
 
     private static int configReload(CommandSourceStack source) {

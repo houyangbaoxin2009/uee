@@ -397,6 +397,21 @@ tasks.register('userStoreTest', JavaExec) {
 }
 
 /**
+ * Runs the checks that a generated configuration file is where the report says it is and can be read back.
+ *
+ * <p>Reported from a real session as "it says it wrote the file and there is nothing there", which is the
+ * gap between claiming attempted work and claiming observable state.
+ */
+tasks.register('configWriteTest', JavaExec) {
+    description = 'Runs the generated-configuration checks.'
+    group = 'verification'
+    dependsOn 'verifyHarness'
+    classpath = harnessClasspath
+    mainClass = 'org.uee.ConfigWriteTest'
+    args = [layout.buildDirectory.dir('config-write-test').get().asFile.absolutePath]
+}
+
+/**
  * Runs the message catalogue checks.
  *
  * <p>A translation system fails quietly: a key the code asks for and no catalogue defines shows a reader the
@@ -420,5 +435,5 @@ tasks.register('verifyAll') {
             'datapackTest', 'functionTest', 'defaultsTest', 'commandSurfaceTest', 'scaleTest',
             'tagTest', 'lootTableTest', 'iconTest', 'categoryTest', 'advancementTest',
             'worldgenTest', 'mcfunctionTest', 'deltaTest', 'assetTest', 'classLoaderTest',
-            'registrationOrderTest', 'userStoreTest', 'uiTextTest'
+            'registrationOrderTest', 'userStoreTest', 'uiTextTest', 'configWriteTest'
 }

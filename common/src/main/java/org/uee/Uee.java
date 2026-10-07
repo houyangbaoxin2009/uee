@@ -223,6 +223,34 @@ public final class Uee {
         return ConfigResolver.resolveDefaults(ExportConfig.builder().build()).config();
     }
 
+    /**
+     * This mod's version, as the loader loaded it, or empty when it cannot be found.
+     *
+     * <p>Asked of the loaded mod list rather than kept in a constant, because a constant is exactly what
+     * drifts from the metadata it describes: a version that has to be updated in two places is updated in
+     * one. The loader already knows, having read it out of the jar.
+     *
+     * <p>Empty rather than a guess when it cannot be found. Reporting a version that is not the one running
+     * is worse than reporting none, and there is no case where a wrong number helps.
+     */
+    public static String modVersion() {
+        LoaderAdapter current = adapter;
+        if (current == null) {
+            return "";
+        }
+        try {
+            for (org.uee.model.ModElement mod : current.mods()) {
+                if (MOD_ID.equals(mod.id())) {
+                    return mod.version() == null ? "" : mod.version();
+                }
+            }
+        } catch (Throwable t) {
+            // A report is not worth failing over; the version simply does not appear.
+            return "";
+        }
+        return "";
+    }
+
     /** The config file path for the bound adapter's game directory, or {@code null} when unbound. */
     public static Path configFile() {
         LoaderAdapter current = adapter;

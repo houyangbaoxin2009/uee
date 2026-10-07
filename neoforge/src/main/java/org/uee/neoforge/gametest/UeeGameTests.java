@@ -766,6 +766,64 @@ public final class UeeGameTests {
         helper.succeed();
     }
 
+    /**
+     * The configuration file a command says it wrote is on disk afterwards.
+     *
+     * <h2>What this is here for</h2>
+     *
+     * <p>Reported from a real session as "it says it wrote the config file and there is no file". The
+     * message was produced whenever the write did not throw, which is a claim about attempted work rather
+     * than about the state of the disk, and the two can differ. So the command now checks after writing, and
+     * this asserts the thing the user could not get: run the command, then look for the file.
+     *
+     * <p>It runs the real command through the dispatcher rather than calling the write directly, because the
+     * gap being closed is between what a command reports and what a user finds — testing the helper would
+     * leave the report itself untested.
+     */
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void theConfigFileIsWrittenWhereItSays(GameTestHelper helper) {
+        var server = helper.getLevel().getServer();
+        Path file = Uee.configFile();
+        helper.assertTrue(file != null, "no config path, so no adapter is bound");
+
+        // Start from absent, or the assertion would pass on a file left by something else.
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException e) {
+            helper.fail("could not clear the config file before the test: " + e);
+            return;
+        }
+
+        var source = server.createCommandSourceStack();
+        server.getCommands().performPrefixedCommand(source, "/uee config template");
+
+        helper.assertTrue(Files.isRegularFile(file),
+                "the command said it wrote the configuration and there is no file at " + file);
+        try {
+            long size = Files.size(file);
+            helper.assertTrue(size > 0, "the configuration file was created empty: " + file);
+            // And it is loadable, since a generated file that cannot be read is worse than none.
+            helper.assertTrue(
+                    org.uee.config.ConfigFile.readFrom(file.getParent()).unknownKeys().isEmpty(),
+                    "the generated configuration documents keys the reader does not know");
+        } catch (IOException e) {
+            helper.fail("could not read back what the command wrote: " + e);
+            return;
+        }
+
+        // Then saving over it, which is the other command that made the same claim.
+        server.getCommands().performPrefixedCommand(source, "/uee config save");
+        try {
+            helper.assertTrue(Files.isRegularFile(file) && Files.size(file) > 0,
+                    "the save command reported success and left no readable file");
+        } catch (IOException e) {
+            helper.fail("could not read back what save wrote: " + e);
+            return;
+        }
+
+        helper.succeed();
+    }
+
     /** The mod list contains this mod and the game itself, with dependencies parsed. */
     @GameTest(template = "empty", timeoutTicks = 200)
     public static void modListIsAvailable(GameTestHelper helper) {

@@ -41,9 +41,19 @@ public final class UiTextTest {
      * which is a file name and would otherwise be reported as a message nobody defined. Adding an area is
      * therefore a deliberate act, in the same list the catalogue is organised by.
      */
+    /**
+     * Characters that belong in a translation and not in the English catalogue.
+     *
+     * <p>Written as code points rather than as the characters themselves, so the check does not depend
+     * on this file being read in the right encoding -- a check about text is the last place to rely on
+     * how text was decoded.
+     */
+    private static final Pattern CJK = Pattern.compile(
+            "[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uff00-\uffef]");
+
     private static final Pattern KEY = Pattern.compile(
             "\"(uee\\.(?:set|err|cmd|status|export|job|jobs|kinds|formats|config|declare|asset"
-                    + "|help|flow|datapack|globalpack|target|strategy|finding|hover)\\.[A-Za-z0-9_.]+)\"");
+                    + "|help|flow|datapack|globalpack|target|strategy|finding|hover|app)\\.[A-Za-z0-9_.]+)\"");
 
     public static void main(String[] args) throws IOException {
         Path root = Path.of(args.length > 0 ? args[0] : "build/ui-text-test");
@@ -96,6 +106,16 @@ public final class UiTextTest {
                 .filter(k -> !UiText.get("zh_cn", k).equals(UiText.get(UiText.FALLBACK_LOCALE, k)))
                 .count();
         check("the Chinese catalogue is a translation, not a copy", differing > english.size() / 2);
+
+        // And the English catalogue is actually English. Nothing above would notice a value written in
+        // the wrong language: the key is defined, it is used, and the two files agree. So a Chinese label
+        // copied into the English file shows up only when someone reads the output, which is how five
+        // entries kept their labels in Chinese on both sides until this was looked at.
+        List<String> notEnglish = english.stream()
+                .filter(k -> CJK.matcher(UiText.get(UiText.FALLBACK_LOCALE, k)).find())
+                .sorted().toList();
+        check("the English catalogue holds no non-Latin text"
+                + (notEnglish.isEmpty() ? "" : ": " + notEnglish), notEnglish.isEmpty());
     }
 
     // ---------------------------------------------------------------- keys versus code

@@ -54,6 +54,17 @@ public final class Ui {
      * <p>Separate from {@link #t} because a word that goes inside another message cannot be a Component:
      * the outer entry has to hold it as an argument, and the argument has to be text.
      */
+    /**
+     * This program's own name, in the reader's language.
+     *
+     * <p>A translation of the name rather than the name itself, because a Chinese reader who is told
+     * "Universal Element Exporter: ..." is being addressed in a language the rest of the sentence is not
+     * in. The metadata keeps the English name, which is what tools read; this is what a person reads.
+     */
+    public static String appName() {
+        return lookup("uee.app.name");
+    }
+
     public static String lookup(String key) {
         String locale = Uee.messageLanguage();
         return UiText.get(locale == null || locale.isBlank() ? null : locale, key);
