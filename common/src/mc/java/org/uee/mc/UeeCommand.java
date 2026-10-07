@@ -613,7 +613,33 @@ public final class UeeCommand {
     }
 
     /**
-     * A path, clickable when there is a client to click it.
+     * The click action attached to a path, chosen by asking the API rather than by trust.
+     *
+     * <h2>The defect this exists to prevent</h2>
+     *
+     * <p>{@code OPEN_FILE} is the obvious choice for a path and is the one action the chat codec refuses to
+     * serialise for a server. Its rejection is not local: encoding fails for the <em>whole</em> message, so
+     * the client receives nothing and reports that it could not send a chat message while the server logs an
+     * encode failure. Every message carrying a path was therefore unsendable — the status readout, the
+     * config paths, and every "wrote ... to <path>" acknowledgement — and what the user saw was a complaint
+     * about chat with the path they had asked for missing entirely.
+     *
+     * <p>Asking {@link ClickEvent.Action#isAllowedFromServer()} rather than hard-coding a name is the point:
+     * the API answers the exact question, so the answer cannot go stale, and the set of allowed actions is
+     * also loader-dependent — one loader patches the check to permit {@code OPEN_FILE} on an integrated
+     * server, which is why this failed on one loader and would have appeared to work on another.
+     *
+     * <p>Returns null when nothing may be attached, and then no interaction is attached at all. A message
+     * with no click is worth less than one with a click; a message that cannot be sent is worth nothing.
+     */
+    public static ClickEvent.Action pathAction() {
+        return ClickEvent.Action.COPY_TO_CLIPBOARD.isAllowedFromServer()
+                ? ClickEvent.Action.COPY_TO_CLIPBOARD
+                : null;
+    }
+
+    /**
+     * A path, clickable when there is a client to click it and an action that may be used.
      *
      * <p>A function has no player behind it, and a console or the server log has nothing to click. In
      * those contexts the path is still the useful part, so it is emitted as plain text rather than
@@ -621,17 +647,19 @@ public final class UeeCommand {
      */
     private static Component link(CommandSourceStack source, Path path) {
         String text = path.toAbsolutePath().toString();
-        boolean interactive = source.getEntity() != null;
         // MutableComponent, not Component: the interface has no withStyle, and literal() already
         // returns something that does.
         net.minecraft.network.chat.MutableComponent base = Component.literal(text);
-        if (!interactive) {
+        ClickEvent.Action action = pathAction();
+        if (source.getEntity() == null || action == null) {
             return base;
         }
         return base.withStyle(style -> style
-                .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_FILE, text))
+                .withClickEvent(new ClickEvent(action, text))
+                // The hover says what the click does. It used to say "open / 打开" for a click that has
+                // never been able to open anything, since the action was refused everywhere it mattered.
                 .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                        Component.literal("open / 打开"))));
+                        Component.literal("copy / 复制"))));
     }
 
     /**

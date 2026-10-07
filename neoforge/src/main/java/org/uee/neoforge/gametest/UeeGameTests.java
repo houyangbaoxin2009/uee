@@ -15,6 +15,7 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import net.minecraft.util.profiling.InactiveProfiler;
 import org.uee.Uee;
+import org.uee.mc.UeeCommand;
 import org.uee.mc.AbstractMinecraftAdapter;
 import org.uee.mc.ResourceManagerCapture;
 import org.uee.config.ExportConfig;
@@ -716,6 +717,51 @@ public final class UeeGameTests {
             }
         }
         helper.assertTrue(blocks, "no block registration order section was produced");
+
+        helper.succeed();
+    }
+
+    /**
+     * A message carrying a path can actually be sent.
+     *
+     * <h2>Why this is a game test and what it would have caught</h2>
+     *
+     * <p>Every path this mod reported was clickable, and the click used the one action the chat codec
+     * refuses to serialise for a server. The refusal is not local to the click: encoding fails for the whole
+     * message, so the client receives nothing and says it could not send a chat message while the server logs
+     * an encode failure — which is how a status readout turned into a complaint about chat.
+     *
+     * <p>So the assertion is not "the action is the one we meant" but "the message encodes". That is the
+     * exact step that failed, and it is checkable here because the codec is the same one the network uses.
+     * The action is also asked whether it may come from a server, since that predicate is the API's own
+     * answer and the allowed set is loader-dependent, so trusting a name is how this happened.
+     */
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void aPathMessageCanBeSent(GameTestHelper helper) {
+        net.minecraft.network.chat.ClickEvent.Action action = UeeCommand.pathAction();
+        helper.assertTrue(action != null, "no click action is permitted, so paths carry no interaction");
+        helper.assertTrue(action.isAllowedFromServer(),
+                "the action we attach is not allowed from a server, which would make every message that"
+                        + " carries a path unsendable: " + action);
+
+        // The whole message, encoded the way the network encodes it. This is the step that failed: the
+        // codec validates the click action and refuses the entire component, not just the click.
+        net.minecraft.network.chat.Component message =
+                net.minecraft.network.chat.Component.literal("  config:   ")
+                        .append(net.minecraft.network.chat.Component.literal("C:/example/uee.data.tie")
+                                .withStyle(style -> style.withClickEvent(
+                                        new net.minecraft.network.chat.ClickEvent(action, "C:/example"))));
+        var encoded = net.minecraft.network.chat.ComponentSerialization.CODEC
+                .encodeStart(com.mojang.serialization.JsonOps.INSTANCE, message);
+        helper.assertTrue(encoded.result().isPresent(),
+                "a message carrying a path does not encode, so it cannot be sent: "
+                        + encoded.error().map(Object::toString).orElse("(no detail)"));
+
+        // And the action that caused it must not be the one we use, since it is the only one the codec
+        // refuses -- recorded as an assertion so that a future change back to it fails here rather than in
+        // someone's chat box.
+        helper.assertTrue(!net.minecraft.network.chat.ClickEvent.Action.OPEN_FILE.isAllowedFromServer(),
+                "OPEN_FILE is now permitted, so the note explaining why it is avoided is out of date");
 
         helper.succeed();
     }
