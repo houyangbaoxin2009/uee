@@ -149,7 +149,6 @@
   "uee.strategy.entry": "  %s  (%s rules%s)",
   "uee.strategy.note": "      %s",
   "uee.finding.entry": "  [%s] %s",
-  "uee.help.title": "%s — multi-loader element exporter",
   "uee.help.export": "  %s                      export with the default settings",
   "uee.help.exportKinds": "  %s export [kinds]       choose which categories to export",
   "uee.help.formats": "  %s formats <formats>    choose the output format(s)",

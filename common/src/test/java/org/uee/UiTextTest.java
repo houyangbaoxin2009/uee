@@ -63,6 +63,7 @@ public final class UiTextTest {
         everyKeyTheCodeUsesIsDefined(source);
         nothingIsDefinedAndUnused(source);
         theFallbackChain();
+        theNameIsTranslated();
         argumentsAreAlwaysSendable();
         formatting();
 
@@ -117,6 +118,42 @@ public final class UiTextTest {
                 .sorted().toList();
         check("the English catalogue holds no non-Latin text"
                 + (notEnglish.isEmpty() ? "" : ": " + notEnglish), notEnglish.isEmpty());
+    }
+
+    /**
+     * The program's own name is translated, and it is resolved in the reader's language.
+     *
+     * <h2>The defect this covers</h2>
+     *
+     * <p>The name is substituted <em>into</em> messages, so it has to be resolved on this side rather than
+     * sent as a key. It was resolved against the configured language, which is empty by default, and an
+     * empty request falls back to English — so a Chinese reader was shown "Universal Element Exporter" in
+     * the middle of Chinese sentences. The choice of language is the game layer's job; what is checkable
+     * here is that the name is a translation at all, so that whatever language is chosen for it, the answer
+     * is in that language.
+     */
+    private static void theNameIsTranslated() {
+        section("the program's own name");
+
+        String key = "uee.app.name";
+        check("the name is defined", UiText.englishKeys().contains(key));
+
+        String english = UiText.get("en_us", key);
+        String chinese = UiText.get("zh_cn", key);
+        check("in English it is the English name", english.equals("Universal Element Exporter"));
+        check("in Chinese it is not", !chinese.equals(english));
+        check("but the Chinese one is Chinese", CJK.matcher(chinese).find());
+
+        // And an unresolvable language still yields a name rather than a key, since the fallback chain ends
+        // at English rather than at nothing.
+        check("an unknown language still gives the English name",
+                UiText.get("eo", key).equals(english));
+
+        // The keys that are substituted into sentences rather than sent as messages depend on this too: if
+        // the name were not translated, these would be the visible symptom.
+        check("and so is every value substituted into a sentence",
+                CJK.matcher(UiText.get("zh_cn", "uee.status.analysisOff")).find()
+                        && CJK.matcher(UiText.get("zh_cn", "uee.declare.kindWhy")).find());
     }
 
     // ---------------------------------------------------------------- keys versus code

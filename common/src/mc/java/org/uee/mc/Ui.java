@@ -39,7 +39,7 @@ public final class Ui {
      * @param args the key's arguments, in the order the entry expects them
      */
     public static Component t(String key, Object... args) {
-        String locale = Uee.messageLanguage();
+        String locale = resolveLocale();
         args = UiText.translatable(args);
         if (locale == null || locale.isBlank()) {
             // The client resolves it. Passing the key means a client that has no translation shows the key,
@@ -56,6 +56,30 @@ public final class Ui {
      * the outer entry has to hold it as an argument, and the argument has to be text.
      */
     /**
+     * The language to resolve text in on this side, which is not the same question as the configured one.
+     *
+     * <h2>Why the distinction has to exist</h2>
+     *
+     * <p>A message sent as a translation <em>key</em> carries no text: the client resolves it, in the
+     * language that client is using. But some text has to be resolved here instead — the program's own name,
+     * and the small values that are substituted <em>into</em> a message — because an argument can only be
+     * text and not a key. Resolving those against the configured language alone gave English to everyone who
+     * had configured nothing, which is everyone by default: the name came out as "Universal Element
+     * Exporter" in the middle of a Chinese sentence.
+     *
+     * <p>So: the configured language if there is one, otherwise the language the client is using, otherwise
+     * English — the last of which is the honest answer on a dedicated server, where there is no client to
+     * ask and no reader with a setting.
+     */
+    public static String resolveLocale() {
+        String configured = Uee.messageLanguage();
+        if (configured != null && !configured.isBlank()) {
+            return configured;
+        }
+        return clientLocale();
+    }
+
+    /**
      * This program's own name, in the reader's language.
      *
      * <p>A translation of the name rather than the name itself, because a Chinese reader who is told
@@ -67,7 +91,7 @@ public final class Ui {
     }
 
     public static String lookup(String key) {
-        String locale = Uee.messageLanguage();
+        String locale = resolveLocale();
         return UiText.get(locale == null || locale.isBlank() ? null : locale, key);
     }
 
@@ -79,9 +103,9 @@ public final class Ui {
      * matters only in that this one has already resolved the language.
      */
     public static String format(String key, Object... args) {
-        String locale = Uee.messageLanguage();
-        args = UiText.translatable(args);
-        return UiText.format(locale == null || locale.isBlank() ? null : locale, key, args);
+        String locale = resolveLocale();
+        return UiText.format(locale == null || locale.isBlank() ? null : locale, key,
+                UiText.translatable(args));
     }
 
     

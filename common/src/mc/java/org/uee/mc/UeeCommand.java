@@ -1372,7 +1372,9 @@ public final class UeeCommand {
 
     private static int help(CommandSourceStack source, String name) {
         String p = "/" + name;
-        detail(source, "uee.help.title", org.uee.mc.Ui.appName());
+        // The name alone. It used to be followed by a description of what the program is, which said the
+        // same thing twice: "Universal Element Exporter -- multi-loader element exporter".
+        source.sendSuccess(() -> org.uee.mc.Ui.t("uee.app.name"), false);
         detail(source, "uee.help.export", p);
         detail(source, "uee.help.exportKinds", p);
         detail(source, "uee.help.formats", p);

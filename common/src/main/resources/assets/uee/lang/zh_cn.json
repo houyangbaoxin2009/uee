@@ -149,7 +149,6 @@
   "uee.strategy.entry": "  %s  （%s 条规则%s）",
   "uee.strategy.note": "      %s",
   "uee.finding.entry": "  [%s] %s",
-  "uee.help.title": "%s —— 多加载器元素导出器",
   "uee.help.export": "  %s                      按默认设置导出",
   "uee.help.exportKinds": "  %s export [类目]       选择要导出的类目",
   "uee.help.formats": "  %s formats <格式>      选择输出格式",
