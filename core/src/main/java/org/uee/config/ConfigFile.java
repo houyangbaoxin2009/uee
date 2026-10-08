@@ -53,8 +53,11 @@ import org.uee.model.ElementKind;
  */
 public final class ConfigFile {
 
-    /** Conventional file name, placed under the loader's config directory. */
-    /** The suffix every configuration file in this project ends with. */
+    /**
+     * The suffix every configuration file in this project ends with, placed under the loader's config
+     * directory. One suffix rather than one name per mod, so that a second mod's file is recognisable as the
+     * same kind of thing and is named by the same rule.
+     */
     public static final String FILE_SUFFIX = ".data.tie";
 
     /** The name the exporter uses. */

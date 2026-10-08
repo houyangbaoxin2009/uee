@@ -19,7 +19,7 @@ public final class UeeForge {
     private final ForgeAdapter adapter = new ForgeAdapter();
 
     public UeeForge() {
-        Uee.bind(adapter);
+        Uee.bind(org.uee.mc.AdapterWiring.wireExporter(adapter));
         MinecraftForge.EVENT_BUS.addListener(this::onServerStarted);
         MinecraftForge.EVENT_BUS.addListener(this::onRegisterCommands);
         // Assets, on a client only. The call is guarded rather than the class being filtered, because

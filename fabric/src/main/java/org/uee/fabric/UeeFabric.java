@@ -26,7 +26,7 @@ public final class UeeFabric implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        Uee.bind(adapter);
+        Uee.bind(org.uee.mc.AdapterWiring.wireExporter(adapter));
 
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             adapter.bindResources(server.getResourceManager());

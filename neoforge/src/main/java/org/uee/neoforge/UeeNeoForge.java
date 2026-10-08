@@ -20,7 +20,7 @@ public final class UeeNeoForge {
     private final NeoForgeAdapter adapter = new NeoForgeAdapter();
 
     public UeeNeoForge(IEventBus modBus) {
-        Uee.bind(adapter);
+        Uee.bind(org.uee.mc.AdapterWiring.wireExporter(adapter));
         NeoForge.EVENT_BUS.addListener(this::onServerStarted);
         NeoForge.EVENT_BUS.addListener(this::onRegisterCommands);
     }

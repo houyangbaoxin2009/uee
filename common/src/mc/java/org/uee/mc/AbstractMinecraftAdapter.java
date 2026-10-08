@@ -74,6 +74,47 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
 
     // ---------------------------------------------------------------- loader-specific surface
 
+    /**
+     * Where failures go while collecting.
+     *
+     * <p>A callback rather than a call to the exporter's facade, because this class is the shared half of
+     * every loader and the facade is one mod's. An adapter that is part of that mod supplies its reporter;
+     * one that is not gets this, which writes to the error stream -- the honest default for something with
+     * no logger, since a failure during collection otherwise disappears.
+     */
+    private java.util.function.BiConsumer<String, Throwable> failureReporter =
+            (message, error) -> {
+                System.err.println("[collect] " + message);
+                if (error != null) {
+                    error.printStackTrace();
+                }
+            };
+
+    /** Supplies the reporter. */
+    public void failureReporter(java.util.function.BiConsumer<String, Throwable> reporter) {
+        if (reporter != null) {
+            this.failureReporter = reporter;
+        }
+    }
+
+    /**
+     * Reads one of the declaration tables that extend the built-in asset lists.
+     *
+     * <p>Supplied rather than read here for the same reason as the reporter, and it answers "none" by
+     * default, which is a correct answer: declarations are an addition to the built-in lists and never a
+     * replacement for them, so a caller that keeps no such table needs the sweep to carry on without one.
+     */
+    private java.util.function.BiFunction<ExportConfig, String, java.util.List<String>> declarationReader =
+            (config, table) -> java.util.List.of();
+
+    /** Supplies the declaration reader. */
+    public void declarationReader(
+            java.util.function.BiFunction<ExportConfig, String, java.util.List<String>> reader) {
+        if (reader != null) {
+            this.declarationReader = reader;
+        }
+    }
+
     protected abstract String loaderName();
 
     protected abstract String loaderVersion();
@@ -780,7 +821,7 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         } catch (Throwable t) {
             // Reported once per affected element rather than swallowed silently, since a store that
             // cannot be read would otherwise produce an export with every icon quietly missing.
-            org.uee.Uee.reportFailure("icon for " + kind.singular() + " " + id + " could not be read", t);
+            failureReporter.accept("icon for " + kind.singular() + " " + id + " could not be read", t);
             return null;
         }
     }
@@ -835,7 +876,7 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
     }
 
     /** Makes the sink call for one prepared item. Always called on the collecting thread. */
-    private static void emit(ElementSink sink, Prepared prepared) {
+    private void emit(ElementSink sink, Prepared prepared) {
         switch (prepared) {
             case Prepared.Item p -> sink.item(p.element());
             case Prepared.Block p -> sink.block(p.element());
@@ -844,7 +885,7 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
             case Prepared.Generic e -> sink.generic(e.kind(), e.namespace(), e.key(), e.nameZh(),
                     e.nameEn(), e.values(), e.extra());
             case Prepared.Bad b -> sink.failure(b.kind(), b.name(), b.error());
-            case Prepared.Note n -> org.uee.Uee.reportFailure(n.message(), n.error());
+            case Prepared.Note n -> failureReporter.accept(n.message(), n.error());
         }
     }
 
@@ -1170,7 +1211,7 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
      * the built-in list and not a replacement for it, so a state file that cannot be read means fewer kinds
      * swept and never a sweep that does not happen.
      */
-    private static java.util.List<String> declaredAssetKinds(ExportConfig config) {
+    private java.util.List<String> declaredAssetKinds(ExportConfig config) {
         return declared(AssetSweep.TABLE, config);
     }
 
@@ -1181,14 +1222,14 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
      * the state file's location is configurable, and reading it through a fresh configuration would look in
      * the default place while the declaring command looked wherever the setting said.
      */
-    private static java.util.List<String> declaredAssetRootFiles(ExportConfig config) {
+    private java.util.List<String> declaredAssetRootFiles(ExportConfig config) {
         return declared(AssetSweep.ROOT_FILE_TABLE, config);
     }
 
     /** One declaration table for the sweep, or an empty list when it cannot be read. */
-    private static java.util.List<String> declared(String table, ExportConfig config) {
+    private java.util.List<String> declared(String table, ExportConfig config) {
         try {
-            return org.uee.Uee.declared(config, table);
+            return declarationReader.apply(config, table);
         } catch (Throwable t) {
             // The declared entries are an addition to the built-in lists and never a replacement for them,
             // so an unreadable state file means fewer entries and never a sweep that does not happen.
