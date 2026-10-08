@@ -51,7 +51,11 @@ tasks.register('verifyCore', JavaCompile) {
     description = 'Compiles the Minecraft-independent core (model, SPI, writers, pipeline, analysis).'
     group = 'verification'
     dependsOn 'compileVendored'
-    source = fileTree('common/src/main/java') {
+    // Both trees: the shared core, and the exporter that builds on it. Neither mentions a game type.
+    source = fileTree('core/src/main/java') {
+        include 'org/uee/**/*.java'
+    }
+    source += fileTree('common/src/main/java') {
         include 'org/uee/**/*.java'
     }
     classpath = files(layout.buildDirectory.dir('classes/compileVendored'))

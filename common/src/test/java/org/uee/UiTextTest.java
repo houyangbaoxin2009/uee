@@ -60,11 +60,14 @@ public final class UiTextTest {
 
     public static void main(String[] args) throws IOException {
         Path root = Path.of(args.length > 0 ? args[0] : "build/ui-text-test");
-        Path source = Path.of("common/src");
+        // Every tree that holds source, because a key is "used" wherever it is written. This was one path
+        // and a package move made thirty-eight entries look unused; the assertion below is so that the next
+        // move fails here with a sentence rather than there with a list.
+        List<Path> sources = List.of(Path.of("core/src"), Path.of("common/src"));
 
         theCatalogues();
-        everyKeyTheCodeUsesIsDefined(source);
-        nothingIsDefinedAndUnused(source);
+        everyKeyTheCodeUsesIsDefined(sources);
+        nothingIsDefinedAndUnused(sources);
         theFallbackChain();
         theNameIsTranslated();
         theLabelledLinesLineUp();
@@ -299,10 +302,10 @@ public final class UiTextTest {
 
     // ---------------------------------------------------------------- keys versus code
 
-    private static void everyKeyTheCodeUsesIsDefined(Path source) throws IOException {
+    private static void everyKeyTheCodeUsesIsDefined(List<Path> sources) throws IOException {
         section("every key the code asks for is defined");
 
-        Set<String> used = keysUsedInSource(source);
+        Set<String> used = keysUsedInSource(sources);
         check("the scan found keys at all", !used.isEmpty());
 
         Set<String> defined = UiText.englishKeys();
@@ -313,10 +316,10 @@ public final class UiTextTest {
                 undefined.isEmpty());
     }
 
-    private static void nothingIsDefinedAndUnused(Path source) throws IOException {
+    private static void nothingIsDefinedAndUnused(List<Path> sources) throws IOException {
         section("nothing is defined and unused");
 
-        Set<String> used = keysUsedInSource(source);
+        Set<String> used = keysUsedInSource(sources);
         // Only this mod's own keys are required to be used. The catalogue also holds keys other software
         // reads by its own convention -- the mod list reads a name translation under its own prefix -- and
         // those are addressed to that software, not to a call site here.
@@ -330,9 +333,22 @@ public final class UiTextTest {
                 orphans.isEmpty());
     }
 
-    /** Every {@code "uee.…"} literal in the source tree. */
-    private static Set<String> keysUsedInSource(Path source) throws IOException {
+    /**
+     * Every {@code "uee.…"} literal in the source trees.
+     *
+     * <p>A root that does not exist is an error rather than an empty result: a scan of nothing finds nothing
+     * used, and every entry then reads as an orphan. That is how a moved package turned thirty-eight live
+     * entries into a list of apparent dead ones instead of one sentence about a wrong path.
+     */
+    private static Set<String> keysUsedInSource(List<Path> sources) throws IOException {
         Set<String> found = new LinkedHashSet<>();
+        for (Path source : sources) {
+            if (!Files.isDirectory(source)) {
+                throw new IOException("no source tree at " + source.toAbsolutePath()
+                        + "; the scan would report every entry as unused");
+            }
+        }
+        for (Path source : sources) {
         try (Stream<Path> files = Files.walk(source)) {
             for (Path file : files.filter(p -> p.toString().endsWith(".java")).toList()) {
                 String text = Files.readString(file, StandardCharsets.UTF_8);
@@ -341,6 +357,7 @@ public final class UiTextTest {
                     found.add(m.group(1));
                 }
             }
+        }
         }
         return found;
     }
