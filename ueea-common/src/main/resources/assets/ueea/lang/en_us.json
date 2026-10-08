@@ -1,0 +1,20 @@
+{
+  "ueea.status.identity": "Checks whether the mods in a pack can run together, and what they cost.",
+  "ueea.status.noGame": "No game is running, so there is nothing to look at.",
+  "ueea.status.loader": "%s, Minecraft %s",
+  "ueea.status.checks": "%s checks available",
+  "ueea.status.exporter": "the exporter is %s",
+  "ueea.status.config": "settings file: %s",
+  "ueea.value.present": "loaded",
+  "ueea.value.absent": "not loaded",
+  "ueea.value.nowhere": "none yet",
+  "ueea.help.line": "  %s              what this is  ·  %s checks  ·  %s analyze  ·  %s check <names>",
+  "ueea.checks.line": "  %s  ·  %s",
+  "ueea.finding.none": "nothing found",
+  "ueea.finding.count": "%s finding(s), %s of them errors",
+  "ueea.finding.entry": "[%s] %s",
+  "ueea.finding.more": "... and %s more",
+  "ueea.err.noGame": "no loader adapter bound",
+  "ueea.err.unknownCheck": "%s is not a check; known: %s",
+  "ueea.err.failed": "the checks could not run: %s"
+}

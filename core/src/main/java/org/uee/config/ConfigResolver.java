@@ -149,6 +149,20 @@ public final class ConfigResolver {
         return configDir(gameDirectory).resolve(ConfigFile.FILE_NAME);
     }
 
+    /**
+     * The same, named for a particular mod.
+     *
+     * <p>Two mods in one game directory need two files, and the alternative to an overload is a second
+     * resolver that agrees with this one until it does not. The name is the mod id followed by the same
+     * suffix, so what a reader sees in the config directory says which mod wrote it.
+     */
+    public static Path configFile(Path gameDirectory, String modId) {
+        if (modId == null || modId.isEmpty()) {
+            return configFile(gameDirectory);
+        }
+        return configDir(gameDirectory).resolve(modId + ConfigFile.FILE_SUFFIX);
+    }
+
     // ---------------------------------------------------------------- vocabulary
 
     /**

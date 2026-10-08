@@ -1,0 +1,20 @@
+{
+  "ueea.status.identity": "检查整合包里的模组能否共存，以及它们要付出什么代价。",
+  "ueea.status.noGame": "没有正在运行的游戏，因此没有可检查的对象。",
+  "ueea.status.loader": "%s，Minecraft %s",
+  "ueea.status.checks": "可用检查 %s 项",
+  "ueea.status.exporter": "导出器：%s",
+  "ueea.status.config": "设置文件：%s",
+  "ueea.value.present": "已加载",
+  "ueea.value.absent": "未加载",
+  "ueea.value.nowhere": "还没有",
+  "ueea.help.line": "  %s              这是什么  ·  %s checks  ·  %s analyze  ·  %s check <名称>",
+  "ueea.checks.line": "  %s  ·  %s",
+  "ueea.finding.none": "没有发现问题",
+  "ueea.finding.count": "%s 条发现，其中 %s 条是错误",
+  "ueea.finding.entry": "[%s] %s",
+  "ueea.finding.more": "……还有 %s 条",
+  "ueea.err.noGame": "没有绑定加载器适配器",
+  "ueea.err.unknownCheck": "%s 不是检查项；可用：%s",
+  "ueea.err.failed": "检查无法运行：%s"
+}

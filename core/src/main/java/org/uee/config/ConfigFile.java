@@ -54,7 +54,11 @@ import org.uee.model.ElementKind;
 public final class ConfigFile {
 
     /** Conventional file name, placed under the loader's config directory. */
-    public static final String FILE_NAME = "uee.data.tie";
+    /** The suffix every configuration file in this project ends with. */
+    public static final String FILE_SUFFIX = ".data.tie";
+
+    /** The name the exporter uses. */
+    public static final String FILE_NAME = "uee" + FILE_SUFFIX;
 
     /** Keys this loader understands, for validation and help. */
     public static final String[] KNOWN_KEYS = {
