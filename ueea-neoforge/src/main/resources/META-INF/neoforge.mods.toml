@@ -1,0 +1,17 @@
+modLoader = "javafml"
+loaderVersion = "[1,)"
+license = "TPL-2.3"
+
+[[mods]]
+modId = "ueea"
+version = "${version}"
+displayName = "Universal Element Exporter - Analysis"
+logoFile = "assets/ueea/icon.png"
+authors = "houyangbaoxin2009"
+description = '''
+Checks whether the mods in a pack can run together, and what they cost.
+'''
+
+# Installable on either side alone, like the exporter, and for the same reason: the checks read what the
+# loader knows, which both sides have.
+displayTest = "IGNORE_ALL_VERSION"

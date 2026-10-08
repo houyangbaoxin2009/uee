@@ -1,0 +1,45 @@
+plugins {
+    id 'net.minecraftforge.gradle' version '[6.0.24,6.2)'
+}
+
+base {
+    archivesName = "${project.archives_base_name}-analysis-forge"
+}
+
+sourceSets {
+    main {
+        java.srcDirs = [
+            'src/main/java',
+            '../core/src/main/java',
+            '../core/src/mc/java',
+            '../ueea-common/src/main/java',
+            '../ueea-common/src/mc/java',
+            
+            '../forge/src/main/java',
+        ]
+        java.exclude 'org/uee/forge/UeeForge.java'
+        java.exclude 'org/uee/forge/UeeForgeClient.java'
+        resources.srcDirs = ['src/main/resources', '../ueea-common/src/main/resources']
+    }
+}
+
+minecraft {
+    mappings channel: 'official', version: project.minecraft_version
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${project.minecraft_version}-${project.forge_version}"
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('META-INF/mods.toml') {
+        expand version: project.version, minecraft_version: project.minecraft_version
+    }
+}
+
+jar {
+    from('../LICENSE') {
+        rename { "LICENSE-${project.archives_base_name}-analysis" }
+    }
+}

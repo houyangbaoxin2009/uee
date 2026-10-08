@@ -17,6 +17,9 @@ rootProject.name = 'uee'
 // See docs/design.md (local) for why, and the verifyCore task in build.gradle for the
 // dependency-free subset that is compiled on its own.
 include 'ueea-fabric'
+include 'ueea-neoforge'
+include 'ueea-forge'
+include 'ueea-quilt'
 include 'fabric'
 include 'neoforge'
 include 'forge'

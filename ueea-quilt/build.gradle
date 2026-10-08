@@ -1,0 +1,52 @@
+plugins {
+    id 'org.quiltmc.loom' version '1.7.4'
+}
+
+base {
+    archivesName = "${project.archives_base_name}-analysis-quilt"
+}
+
+sourceSets {
+    main {
+        java.srcDirs = [
+            'src/main/java',
+            '../core/src/main/java',
+            '../core/src/mc/java',
+            '../ueea-common/src/main/java',
+            '../ueea-common/src/mc/java',
+            
+            '../quilt/src/main/java',
+        ]
+        java.exclude 'org/uee/quilt/UeeQuilt.java'
+        java.exclude 'org/uee/quilt/UeeQuiltClient.java'
+        java.exclude 'org/uee/quilt/UeeModMenu.java'
+        resources.srcDirs = ['src/main/resources', '../ueea-common/src/main/resources']
+    }
+}
+
+loom {
+    runs {
+        client { client() }
+        server { server() }
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings loom.officialMojangMappings()
+    modImplementation "org.quiltmc:quilt-loader:${project.quilt_loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('quilt.mod.json') {
+        expand version: project.version, minecraft_version: project.minecraft_version
+    }
+}
+
+jar {
+    from('../LICENSE') {
+        rename { "LICENSE-${project.archives_base_name}-analysis" }
+    }
+}

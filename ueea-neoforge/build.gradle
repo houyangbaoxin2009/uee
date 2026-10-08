@@ -1,0 +1,57 @@
+plugins {
+    id 'net.neoforged.moddev' version '2.0.146'
+}
+
+base {
+    archivesName = "${project.archives_base_name}-analysis-neoforge"
+}
+
+// Compiled from the same trees as the exporter's build, minus the exporter. The one directory borrowed from
+// it holds the adapter, which is mod-agnostic now; its entry points are excluded, because they register the
+// other mod and this mod is not that one.
+sourceSets {
+    main {
+        java.srcDirs = [
+            'src/main/java',
+            '../core/src/main/java',
+            '../core/src/mc/java',
+            '../ueea-common/src/main/java',
+            '../ueea-common/src/mc/java',
+            
+            '../neoforge/src/main/java',
+        ]
+        java.exclude 'org/uee/neoforge/UeeNeoForge.java'
+        java.exclude 'org/uee/neoforge/UeeNeoForgeClient.java'
+        java.exclude 'org/uee/neoforge/gametest/**'
+        // Registering global datapacks is something the exporter does when it exports;
+        // the analysis half reads what is there and has nothing to register.
+        java.exclude 'org/uee/neoforge/NeoForgeGlobalPacks.java'
+        resources.srcDirs = ['src/main/resources', '../ueea-common/src/main/resources']
+    }
+}
+
+neoForge {
+    version = project.neoforge_version
+    runs {
+        client { client() }
+        server { server() }
+    }
+    mods {
+        "${project.archives_base_name}-analysis" {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('META-INF/neoforge.mods.toml') {
+        expand version: project.version, minecraft_version: project.minecraft_version
+    }
+}
+
+jar {
+    from('../LICENSE') {
+        rename { "LICENSE-${project.archives_base_name}-analysis" }
+    }
+}
