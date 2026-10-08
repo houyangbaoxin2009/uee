@@ -14,6 +14,7 @@ import org.uee.icon.IconPhase;
 import org.uee.icon.IconStore;
 import org.uee.model.ElementKind;
 import org.uee.spi.LoaderAdapter;
+import org.uee.spi.Diagnostics;
 
 /**
  * Runs the icon phase from the client's frame loop.
@@ -170,7 +171,7 @@ public final class IconPhaseDriver {
         } catch (IOException e) {
             // A store that cannot be written to is not something the frame loop can fix, and taking the
             // client down over it would be worse than finishing with fewer icons.
-            org.uee.Uee.reportFailure("icons could not be written to " + store.root(), e);
+            Diagnostics.reportFailure("icons could not be written to " + store.root(), e);
         }
         if (phase.isComplete()) {
             bind();

@@ -22,6 +22,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import org.uee.spi.Diagnostics;
 
 /**
  * Renders items and entities to PNG images on the client, off-screen.
@@ -227,7 +228,7 @@ public final class IconRenderer {
             // Reported once per icon rather than propagated: the phase already knows how to record a
             // skipped element, and one item with a model the renderer cannot handle must not cost the
             // export every other icon.
-            org.uee.Uee.reportFailure("icon render failed at " + size + "px", t);
+            Diagnostics.reportFailure("icon render failed at " + size + "px", t);
             return null;
         } finally {
             // The world's target has to be bound again before anything else draws, or the next frame goes

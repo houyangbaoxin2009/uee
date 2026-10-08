@@ -53,6 +53,7 @@ import org.uee.model.RecipeElement;
 import org.uee.spi.ElementSink;
 import org.uee.spi.LoaderAdapter;
 import org.uee.spi.LoaderInfo;
+import org.uee.spi.Diagnostics;
 
 /**
  * Shared collection logic for every Minecraft loader.
@@ -821,7 +822,7 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
         } catch (Throwable t) {
             // Reported once per affected element rather than swallowed silently, since a store that
             // cannot be read would otherwise produce an export with every icon quietly missing.
-            failureReporter.accept("icon for " + kind.singular() + " " + id + " could not be read", t);
+            Diagnostics.reportFailure("icon for " + kind.singular() + " " + id + " could not be read", t);
             return null;
         }
     }
@@ -885,7 +886,7 @@ public abstract class AbstractMinecraftAdapter implements LoaderAdapter {
             case Prepared.Generic e -> sink.generic(e.kind(), e.namespace(), e.key(), e.nameZh(),
                     e.nameEn(), e.values(), e.extra());
             case Prepared.Bad b -> sink.failure(b.kind(), b.name(), b.error());
-            case Prepared.Note n -> failureReporter.accept(n.message(), n.error());
+            case Prepared.Note n -> Diagnostics.reportFailure(n.message(), n.error());
         }
     }
 

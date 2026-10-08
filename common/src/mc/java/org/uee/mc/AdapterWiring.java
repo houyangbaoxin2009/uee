@@ -1,6 +1,7 @@
 package org.uee.mc;
 
 import org.uee.Uee;
+import org.uee.spi.Diagnostics;
 
 /**
  * Supplies an adapter with the two things the shared base class asks for.
@@ -25,7 +26,7 @@ public final class AdapterWiring {
      * @return the same adapter, so a caller can bind it in one expression
      */
     public static <T extends AbstractMinecraftAdapter> T wireExporter(T adapter) {
-        adapter.failureReporter(Uee::reportFailure);
+        Diagnostics.reporter(Uee::reportFailure);
         adapter.declarationReader(Uee::declared);
         return adapter;
     }
