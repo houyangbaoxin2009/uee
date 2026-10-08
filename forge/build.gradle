@@ -8,7 +8,7 @@ base {
 
 sourceSets {
     main {
-        java.srcDirs = ['src/main/java', '../core/src/main/java', '../common/src/main/java', '../common/src/mc/java']
+        java.srcDirs = ['src/main/java', '../core/src/main/java', '../ueea-common/src/main/java', '../common/src/main/java', '../common/src/mc/java']
         // The shared resources carry the message catalogues, so a translation is added in one place
         // rather than in four -- the same reasoning as the shared java sources above.
         resources.srcDirs = ['src/main/resources', '../common/src/main/resources']

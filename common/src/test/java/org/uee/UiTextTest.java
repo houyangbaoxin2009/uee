@@ -63,7 +63,7 @@ public final class UiTextTest {
         // Every tree that holds source, because a key is "used" wherever it is written. This was one path
         // and a package move made thirty-eight entries look unused; the assertion below is so that the next
         // move fails here with a sentence rather than there with a list.
-        List<Path> sources = List.of(Path.of("core/src"), Path.of("common/src"));
+        List<Path> sources = List.of(Path.of("core/src"), Path.of("common/src"), Path.of("ueea-common/src"));
 
         theCatalogues();
         everyKeyTheCodeUsesIsDefined(sources);

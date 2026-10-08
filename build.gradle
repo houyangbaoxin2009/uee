@@ -58,6 +58,9 @@ tasks.register('verifyCore', JavaCompile) {
     source += fileTree('common/src/main/java') {
         include 'org/uee/**/*.java'
     }
+    source += fileTree('ueea-common/src/main/java') {
+        include 'org/uee/**/*.java'
+    }
     classpath = files(layout.buildDirectory.dir('classes/compileVendored'))
     destinationDirectory = layout.buildDirectory.dir('classes/verifyCore')
     options.encoding = 'UTF-8'
