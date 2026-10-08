@@ -19,10 +19,17 @@
     ],
     "client": [
       "org.uee.fabric.UeeFabricClient"
+    ],
+    "modmenu": [
+      "org.uee.fabric.UeeModMenu"
     ]
   },
   "depends": {
     "fabricloader": ">=0.15.0",
     "minecraft": ">=1.21.1 <1.21.2"
+  },
+  "icon": "assets/uee/icon.png",
+  "suggests": {
+    "modmenu": "*"
   }
 }

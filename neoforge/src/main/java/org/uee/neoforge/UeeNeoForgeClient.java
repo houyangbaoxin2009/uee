@@ -2,7 +2,9 @@ package org.uee.neoforge;
 
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import org.uee.Uee;
 import org.uee.mc.ResourceManagerCapture;
@@ -25,8 +27,20 @@ import org.uee.mc.ResourceManagerCapture;
 @Mod(value = Uee.MOD_ID, dist = Dist.CLIENT)
 public final class UeeNeoForgeClient {
 
-    public UeeNeoForgeClient(IEventBus modBus) {
+    public UeeNeoForgeClient(IEventBus modBus, ModContainer container) {
         modBus.addListener(this::onRegisterClientReloadListeners);
+
+        // What the mods screen opens when its config button is pressed. Registered on the container rather
+        // than on a bus because it is a property of this mod, which is also how the loader finds it: it
+        // asks each container whether it has one.
+        container.registerExtensionPoint(IConfigScreenFactory.class, (IConfigScreenFactory) (c, parent) -> {
+            try {
+                return org.uee.mc.ConfigScreen.open(parent);
+            } catch (RuntimeException e) {
+                // The settings could not be read; the list is more useful than an exception here.
+                return parent;
+            }
+        });
     }
 
     /**

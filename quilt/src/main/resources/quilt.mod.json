@@ -23,6 +23,12 @@
       ],
       "client_init": [
         "org.uee.quilt.UeeQuiltClient"
+      ],
+      "modmenu": [
+        {
+          "adapter": "fabric",
+          "value": "org.uee.quilt.UeeModMenu"
+        }
       ]
     },
     "depends": [
@@ -34,6 +40,8 @@
         "id": "minecraft",
         "versions": ">=1.21.1 <1.21.2"
       }
-    ]
+    ],
+    "icon": "assets/uee/icon.png",
+    "breaks": {}
   }
 }

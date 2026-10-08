@@ -24,9 +24,23 @@ public final class UeeForgeClient {
     private UeeForgeClient() {
     }
 
-    /** Registers the capture. Called only on a client. */
+    /** Registers the capture and the settings screen. Called only on a client. */
     static void init(IEventBus modBus) {
         modBus.addListener(UeeForgeClient::onRegisterClientReloadListeners);
+
+        // What the mods screen opens when its config button is pressed. Forge collects these from an
+        // extension point keyed by class, which is the same shape NeoForge uses.
+        net.minecraftforge.fml.ModLoadingContext.get().registerExtensionPoint(
+                net.minecraftforge.client.ConfigScreenHandler.ConfigScreenFactory.class,
+                () -> new net.minecraftforge.client.ConfigScreenHandler.ConfigScreenFactory(
+                        (minecraft, parent) -> {
+                            try {
+                                return org.uee.mc.ConfigScreen.open(parent);
+                            } catch (RuntimeException e) {
+                                // The settings could not be read; the list is more useful than an exception.
+                                return parent;
+                            }
+                        }));
     }
 
     private static void onRegisterClientReloadListeners(RegisterClientReloadListenersEvent event) {

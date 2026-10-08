@@ -29,6 +29,16 @@ loom {
     }
 }
 
+sourceSets {
+    main {
+        java {
+            // Declarations of the mod list's two interfaces, so the entrypoint can implement them without
+            // this build depending on that mod at all. Everything here is excluded from the jar below.
+            srcDir 'src/apiStub/java'
+        }
+    }
+}
+
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings loom.officialMojangMappings()
@@ -36,6 +46,8 @@ dependencies {
     // Quilt runs Fabric mods through its compatibility layer; the Fabric API is what the shared
     // adapter relies on for the mod list and resource access.
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    // Nothing from the mod list is depended on, not even at compile time: the interfaces it expects are
+    // declared here as stubs instead. See src/apiStub for why.
 }
 
 processResources {
@@ -49,4 +61,10 @@ jar {
     from('../LICENSE') {
         rename { "LICENSE-${project.archives_base_name}" }
     }
+}
+
+// The stubs are for compiling against only. Excluded here rather than by a separate source set because a
+// jar exclusion is one line and directly checkable: the built file is inspected for the package.
+tasks.named('jar') {
+    exclude 'com/terraformersmc/**'
 }

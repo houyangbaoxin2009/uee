@@ -224,5 +224,22 @@
   "uee.check.mixins": "各模组 patch 了哪些类，以及被多个模组 patch 的目标类",
   "uee.check.namespace-claims": "各模组声明的命名空间，以及被多个模组声明的命名空间",
   "uee.check.orphan-namespaces": "注册表里存在、但没有模组声明的命名空间",
-  "uee.check.description": "      %s"
+  "uee.check.description": "      %s",
+  "modmenu.summaryTranslation.uee": "一次导出模组元数据、注册表与游戏资产",
+  "modmenu.descriptionTranslation.uee": "可配置的一次性导出：模组元数据、注册表、数据包内容与游戏资产，产出供 wiki 编辑等自动化流程使用的机器可读产物。",
+  "uee.screen.title": "通用元素导出器 设置",
+  "uee.screen.edits": "正在编辑本实例：%s",
+  "uee.screen.nowhere": "还没有配置文件",
+  "uee.screen.value": "值",
+  "uee.screen.save": "保存",
+  "uee.screen.reload": "重新载入",
+  "uee.screen.defaults": "默认值",
+  "uee.screen.done": "完成",
+  "uee.screen.saved": "已保存到 %s",
+  "uee.screen.reloaded": "已从文件重新载入",
+  "uee.screen.defaultsShown": "已填入默认值；尚未保存",
+  "uee.screen.rejected": "有值被拒绝，未保存：%s",
+  "uee.screen.partlyApplied": "部分内容未生效：%s",
+  "uee.screen.saveFailed": "无法保存：%s",
+  "uee.screen.unreadable": "无法读取配置：%s"
 }

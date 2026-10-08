@@ -1109,6 +1109,18 @@ public final class ConfigFile {
         return java.util.List.of(KNOWN_KEYS);
     }
 
+    /**
+     * The td text for each key, as it should appear in a written file.
+     *
+     * <p>Public because a surface that edits settings — the in-game screen, for instance — needs each value
+     * as text to put in a field and back through the parser. Returning the same map that the command line
+     * and the written file use is the point: a screen with its own copy of the defaults would show values
+     * that the run does not use, which is the defect this avoids rather than repeats.
+     */
+    public static Map<String, String> values(ExportConfig config) {
+        return effectiveValues(config);
+    }
+
     /** The td text for each key, as it should appear in a written file. */
     private static Map<String, String> effectiveValues(ExportConfig config) {
         Map<String, String> v = new java.util.LinkedHashMap<>();

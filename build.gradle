@@ -8,6 +8,9 @@ allprojects {
 
     repositories {
         mavenCentral()
+        // Where the mod list's API lives. Compile-only: the mod does not require the list mod to run,
+        // and only the one class that names its interface is ever loaded with it.
+        maven { name = 'TerraformersMC'; url = 'https://maven.terraformersmc.com/releases' }
     }
 }
 

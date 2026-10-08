@@ -224,5 +224,22 @@
   "uee.check.mixins": "which classes each mod patches, and targets patched by more than one mod",
   "uee.check.namespace-claims": "namespaces mods claim, and namespaces claimed by more than one mod",
   "uee.check.orphan-namespaces": "namespaces present in the registries that no loaded mod claims",
-  "uee.check.description": "      %s"
+  "uee.check.description": "      %s",
+  "modmenu.summaryTranslation.uee": "Export mod metadata, registries and assets in one pass",
+  "modmenu.descriptionTranslation.uee": "Exports mod metadata, registries, datapack contents and game assets in one configurable pass, as machine-readable artifacts for automation such as wiki editing workflows.",
+  "uee.screen.title": "Universal Element Exporter settings",
+  "uee.screen.edits": "editing this instance: %s",
+  "uee.screen.nowhere": "no configuration file yet",
+  "uee.screen.value": "value",
+  "uee.screen.save": "Save",
+  "uee.screen.reload": "Reload",
+  "uee.screen.defaults": "Defaults",
+  "uee.screen.done": "Done",
+  "uee.screen.saved": "saved to %s",
+  "uee.screen.reloaded": "reloaded from the file",
+  "uee.screen.defaultsShown": "defaults filled in; not saved yet",
+  "uee.screen.rejected": "a value was refused, so nothing was saved: %s",
+  "uee.screen.partlyApplied": "part of what was typed did not take effect: %s",
+  "uee.screen.saveFailed": "could not save: %s",
+  "uee.screen.unreadable": "could not read the configuration: %s"
 }

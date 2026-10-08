@@ -6,6 +6,7 @@ license = "TPL-2.3"
 modId = "uee"
 version = "${version}"
 displayName = "Universal Element Exporter"
+logoFile = "assets/uee/icon.png"
 authors = "houyangbaoxin2009"
 description = '''
 Multi-loader element exporter for Minecraft.

@@ -55,7 +55,7 @@ public final class UiTextTest {
             "\"(uee\\.(?:set|err|cmd|status|export|job|jobs|kinds|formats|config|declare|asset"
                     // Hyphens belong in the trailing class: check ids are hyphenated, so without it
                     // half the check descriptions would be invisible to this scan and reported as unused.
-                    + "|help|flow|datapack|globalpack|target|strategy|finding|hover|app|analysis|check|report)"
+                    + "|help|flow|datapack|globalpack|target|strategy|finding|hover|app|analysis|check|report|screen)"
                     + "\\.[A-Za-z0-9_.\\-]+)\"");
 
     public static void main(String[] args) throws IOException {
