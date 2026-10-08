@@ -45,7 +45,7 @@ import org.uee.spi.LoaderAdapter;
 public final class Uee {
 
     /** The mod id, identical on all four loaders so automation can locate artifacts by a fixed path. */
-    public static final String MOD_ID = "uee";
+    public static final String MOD_ID = org.uee.spi.ModIds.EXPORTER;
 
     /** The human-readable name, used in command output and reports. */
     public static final String NAME = "Universal Element Exporter";

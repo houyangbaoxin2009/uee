@@ -38,7 +38,7 @@ import org.uee.spi.LoaderAdapter;
 public final class Ueea {
 
     /** The mod id, which is also the name of its configuration file. */
-    public static final String MOD_ID = "ueea";
+    public static final String MOD_ID = org.uee.spi.ModIds.ANALYSIS;
 
     /** What a mods list shows. */
     public static final String NAME = "Universal Element Exporter - Analysis";
@@ -100,7 +100,7 @@ public final class Ueea {
         }
         try {
             for (ModElement mod : current.mods()) {
-                if (Uee.MOD_ID.equals(mod.id())) {
+                if (org.uee.spi.ModIds.EXPORTER.equals(mod.id())) {
                     return true;
                 }
             }

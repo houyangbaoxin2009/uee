@@ -1,7 +1,6 @@
 package org.uee.mc;
 
 import java.nio.file.Path;
-import org.uee.Uee;
 import org.uee.config.ExportConfig;
 import org.uee.spi.LoaderAdapter;
 
@@ -85,10 +84,5 @@ public final class ClientIcons {
     /** Stops a running phase, keeping what has been rendered so a later run resumes from it. */
     public static void cancel() {
         IconPhaseDriver.cancel();
-    }
-
-    /** Whether this side can render at all, which a dedicated server cannot. */
-    public static boolean available() {
-        return Uee.adapter() instanceof AbstractMinecraftAdapter;
     }
 }

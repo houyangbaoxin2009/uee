@@ -31,7 +31,7 @@ subprojects {
 tasks.register('compileVendored', JavaCompile) {
     description = 'Compiles the vendored zd codec to prove it builds under this target.'
     group = 'verification'
-    source = fileTree('common/src/main/java') {
+    source = fileTree('core/src/main/java') {
         include 'org/tielang/**/*.java'
     }
     classpath = files()

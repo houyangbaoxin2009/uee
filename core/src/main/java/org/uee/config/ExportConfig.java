@@ -610,7 +610,7 @@ public final class ExportConfig {
 
     /** The default output root under a game directory. */
     public static Path defaultOutputDir(Path gameDirectory) {
-        return gameDirectory.resolve("exports").resolve(org.uee.Uee.MOD_ID);
+        return gameDirectory.resolve("exports").resolve(org.uee.spi.ModIds.EXPORTER);
     }
 
     /** Mutable builder with the documented defaults. */

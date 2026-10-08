@@ -1,0 +1,61 @@
+plugins {
+    id 'fabric-loom' version '1.7-SNAPSHOT'
+}
+
+base {
+    archivesName = "${project.archives_base_name}-analysis-fabric"
+}
+
+// The same arrangement as the exporter's build, with one addition: this mod has no adapter of its own,
+// because the adapter it needs is already mod-agnostic -- it collects, and whoever owns the reporting
+// installs it. So the exporter's fabric module is borrowed for that one file, and its entry points are
+// excluded: they register the other mod, and two registrations of one mod is what that would mean.
+sourceSets {
+    main {
+        java.srcDirs = [
+            'src/main/java',
+            '../core/src/main/java',
+            '../core/src/mc/java',
+            '../ueea-common/src/main/java',
+            '../ueea-common/src/mc/java',
+            '../fabric/src/main/java',
+        ]
+        // Everything in that last directory except the adapter. Kept as an explicit list because the
+        // alternative is a wildcard that would silently include the next file added there.
+        java.exclude 'org/uee/fabric/UeeFabric.java'
+        java.exclude 'org/uee/fabric/UeeFabricClient.java'
+        java.exclude 'org/uee/fabric/UeeModMenu.java'
+        resources.srcDirs = ['src/main/resources', '../ueea-common/src/main/resources']
+    }
+}
+
+loom {
+    runs {
+        client {
+            client()
+        }
+        server {
+            server()
+        }
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:${project.fabric_loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') {
+        expand version: project.version, minecraft_version: project.minecraft_version
+    }
+}
+
+jar {
+    from('../LICENSE') {
+        rename { "LICENSE-${project.archives_base_name}-analysis" }
+    }
+}

@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "ueea",
+  "version": "${version}",
+  "name": "Universal Element Exporter - Analysis",
+  "description": "Checks whether the mods in a pack can run together, and what they cost.",
+  "authors": [
+    "houyangbaoxin2009"
+  ],
+  "contact": {
+    "homepage": "https://github.com/houyangbaoxin2009/uee",
+    "sources": "https://github.com/houyangbaoxin2009/uee"
+  },
+  "license": "TPL-2.3",
+  "icon": "assets/ueea/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "org.uee.fabric.UeeaFabric"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": ">=1.21.1 <1.21.2"
+  }
+}
